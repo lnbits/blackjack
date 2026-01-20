@@ -1,0 +1,9 @@
+{
+  "repos": [
+    {
+      "id": "blackjack",
+      "organisation": "lnbits",
+      "repository": "blackjack"
+    }
+  ]
+}

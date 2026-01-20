@@ -1,0 +1,339 @@
+<!--/////////////////////////////////////////////////-->
+<!--////////////////GAMEPLAY INTERFACE///////////////-->
+<!--/////////////////////////////////////////////////-->
+
+{% extends "public.html" %} {% block page %}
+<div id="game-container" class="q-pa-md">
+  <div class="row justify-center">
+    <div class="col-12 col-md-8">
+      <q-card class="q-pa-lg">
+        <q-card-section>
+          <div class="row items-center justify-between">
+            <div class="col-auto">
+              <h4 class="q-my-none">Blackjack Game - {{ public_page_name }}</h4>
+            </div>
+            <!-- TODO: add a rolling balance until user withdraws -->
+            <!-- <div class="col-auto">
+              <q-chip color="primary" text-color="white">
+                Balance: <span id="balance">0</span> sats
+              </q-chip>
+            </div> -->
+          </div>
+        </q-card-section>
+
+        <q-card-section>
+          <!-- Dealer Section -->
+          <div class="q-mb-xl">
+            <h5 class="q-my-sm text-grey-8">Dealer</h5>
+            <div class="row items-center justify-center q-gutter-md">
+              <div
+                v-for="(card, index) in dealerHand"
+                :key="index"
+                class="card"
+                :class="{ 'hidden-card': index === 1 && !gameFinished && gameStarted }"
+              >
+                <div class="card-inner">
+                  <div
+                    class="card-front"
+                    v-if="!(index === 1 && !gameFinished && gameStarted)"
+                  >
+                    <div class="card-content">
+                      <div class="card-rank" v-text="card.rank"></div>
+                      <div
+                        class="card-suit"
+                        v-text="getSuitSymbol(card.suit)"
+                      ></div>
+                      <div class="card-rank bottom" v-text="card.rank"></div>
+                    </div>
+                  </div>
+                  <div class="card-back" v-else>
+                    <div class="card-back-content">?</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="text-center q-mt-sm">
+              <span v-if="dealerRevealed">
+                Score: <span v-text="dealerScore"></span>
+                <br />
+                <small v-text="getHandAbbreviation(dealerHand, false)"></small>
+              </span>
+              <span v-else-if="gameStarted">
+                Score: <span v-text="dealerHiddenScore"></span>
+                <br />
+                <small v-text="getHandAbbreviation(dealerHand, true)"></small>
+              </span>
+            </div>
+          </div>
+
+          <!-- VS Divider -->
+          <div class="row justify-center q-my-md">
+            <div class="col-auto">
+              <q-badge
+                color="secondary"
+                text-color="white"
+                class="q-px-xl q-py-md"
+              >
+                VS
+              </q-badge>
+            </div>
+          </div>
+
+          <!-- Player Section -->
+          <div>
+            <h5 class="q-my-sm text-grey-8">You</h5>
+            <div class="row items-center justify-center q-gutter-md">
+              <div
+                v-for="(card, index) in playerHand"
+                :key="index"
+                class="card"
+              >
+                <div class="card-inner">
+                  <div class="card-front">
+                    <div class="card-content">
+                      <div class="card-rank" v-text="card.rank"></div>
+                      <div
+                        class="card-suit"
+                        v-text="getSuitSymbol(card.suit)"
+                      ></div>
+                      <div class="card-rank bottom" v-text="card.rank"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="text-center q-mt-sm">
+              Score: <span v-text="playerScore"></span>
+              <br />
+              <small v-text="getHandAbbreviation(playerHand, false)"></small>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section v-if="gameStatus === 'waiting_for_bet'">
+          <div class="row q-gutter-md justify-center">
+            <q-input
+              filled
+              dense
+              v-model.number="betAmount"
+              label="Bet Amount (sats)"
+              type="number"
+              min="1"
+              class="col-6"
+            ></q-input>
+          </div>
+          <div class="row q-gutter-md justify-center q-mt-md">
+            <q-input
+              filled
+              dense
+              v-model="lnAddress"
+              label="LN Address for potential payout"
+              type="text"
+              class="col-6"
+            ></q-input>
+          </div>
+          <div class="row q-mt-md q-gutter-md justify-center">
+            <q-btn
+              @click="placeBet"
+              unelevated
+              color="primary"
+              :disabled="!betAmount || betAmount <= 0 || !lnAddress"
+            >
+              Place Bet
+            </q-btn>
+          </div>
+        </q-card-section>
+
+        <q-card-section v-else-if="gameStatus === 'bet_placed'">
+          <div class="row q-mt-md q-gutter-md justify-center">
+            <q-btn
+              @click="hit"
+              unelevated
+              color="primary"
+              :disabled="gameFinished"
+            >
+              Hit
+            </q-btn>
+            <q-btn
+              @click="stand"
+              unelevated
+              color="secondary"
+              :disabled="gameFinished"
+            >
+              Stand
+            </q-btn>
+          </div>
+        </q-card-section>
+
+        <q-card-section v-else-if="gameStatus === 'game_over'">
+          <div class="row justify-center">
+            <q-chip
+              :color="resultColor"
+              text-color="white"
+              class="text-h6"
+              v-text="resultMessage"
+            >
+            </q-chip>
+          </div>
+          <div class="row q-mt-md q-gutter-md justify-center">
+            <q-btn @click="newGame" unelevated color="primary">
+              New Game
+            </q-btn>
+          </div>
+        </q-card-section>
+      </q-card>
+      <div class="q-mt-md">
+        <q-list>
+          <q-expansion-item
+            group="somegroup"
+            icon="explore"
+            label="First"
+            default-opened
+            header-class="text-primary"
+            v-for="hand in gameHistory"
+          >
+            <q-item>
+              <q-item-section>
+                <q-item-label v-text="hand.id"></q-item-label>
+                <q-item-label caption lines="2"
+                  >Secondary line text. Lorem ipsum dolor sit amet, consectetur
+                  adipiscit elit.</q-item-label
+                >
+              </q-item-section>
+
+              <q-item-section side top>
+                <q-item-label
+                  caption
+                  v-text="utils.formatTimestampFrom(hand.timestamp)"
+                ></q-item-label>
+                <q-icon name="star" color="yellow" />
+              </q-item-section>
+            </q-item>
+          </q-expansion-item>
+        </q-list>
+      </div>
+
+      <!-- Payment Dialog -->
+      <q-dialog
+        v-model="showPaymentDialog"
+        position="top"
+        @hide="closePaymentDialog"
+      >
+        <q-card class="q-pa-lg q-pt-xl lnbits__dialog-card">
+          <div class="text-center q-mb-lg">
+            <lnbits-qrcode
+              :href="'lightning:' + paymentRequest"
+              :value="'lightning:' + paymentRequest.toUpperCase()"
+            ></lnbits-qrcode>
+          </div>
+          <div class="row q-mt-lg">
+            <q-btn outline color="grey" @click="utils.copyText(paymentRequest)"
+              >Copy invoice</q-btn
+            >
+            <q-btn v-close-popup flat color="grey" class="q-ml-auto"
+              >Close</q-btn
+            >
+          </div>
+        </q-card>
+      </q-dialog>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  const dealersId = '{{ dealers_id }}'
+</script>
+<script src="{{ static_url_for('blackjack/static', path='js/game.js') }}"></script>
+<style>
+  .card {
+    width: 60px;
+    height: 90px;
+    perspective: 1000px;
+  }
+
+  .card-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+  }
+
+  .card-front,
+  .card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .card-front {
+    background: white;
+    border: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: black; /* Ensure text is visible */
+  }
+
+  .card-back {
+    background: linear-gradient(45deg, #1976d2, #42a5f5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .card-back-content {
+    color: white;
+    font-weight: bold;
+    font-size: 24px;
+  }
+
+  .card-content {
+    width: 100%;
+    height: 100%;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .card-rank {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: left;
+  }
+
+  .card-rank.bottom {
+    align-self: flex-end;
+    transform: rotate(180deg);
+  }
+
+  .card-suit {
+    font-size: 24px;
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hidden-card {
+    background: linear-gradient(45deg, #1976d2, #42a5f5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  #game-container {
+    min-height: 100vh;
+  }
+</style>
+{% endblock %}

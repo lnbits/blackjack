@@ -1,0 +1,320 @@
+{
+    "id": "blackjack",
+    "name": "BlackJack",
+    "stub_version": "v0.0.9",
+    "short_description": "A BlackJack Dealer",
+    "description": "",
+    "owner_data": {
+        "name": "Dealers",
+        "editable": true,
+        "fields": [
+            {
+                "name": "name",
+                "type": "str",
+                "label": "Name",
+                "hint": "",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "wallet_id",
+                "type": "wallet",
+                "label": "Wallet",
+                "hint": "",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "min_bet",
+                "type": "int",
+                "label": "Min. Bet",
+                "hint": "Minimum bet per hand (in satoshis)",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "max_bet",
+                "type": "int",
+                "label": "Max. Bet",
+                "hint": "Maximum bet per hand (in satoshis)",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "decks",
+                "type": "int",
+                "label": "Num. of Decks",
+                "hint": "Number of decks in the shoe",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "hit_soft_17",
+                "type": "bool",
+                "label": "H17",
+                "hint": "Dealer hits on soft 17 (standard casino rule)",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "blackjack_payout",
+                "type": "str",
+                "label": "",
+                "hint": "Payout for natural blackjack",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "active",
+                "type": "bool",
+                "label": "Active",
+                "hint": "Is this table open for play?",
+                "optional": false,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            }
+        ]
+    },
+    "client_data": {
+        "name": "HandsPlayed",
+        "editable": true,
+        "fields": [
+            {
+                "name": "dealer_id",
+                "type": "str",
+                "label": "Dealer",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "status",
+                "type": "text",
+                "label": "Status",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "bet_amount",
+                "type": "int",
+                "label": "Bet",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "payment_hash",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "current_hand",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "shoe",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "outcome",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "client_seed",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "server_seed",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "server_seed_hash",
+                "type": "text",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "ended_at",
+                "type": "datetime",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "paid",
+                "type": "bool",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "payout_sent",
+                "type": "bool",
+                "label": "",
+                "hint": "",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            }
+        ]
+    },
+    "settings_data": {
+        "name": "Settings",
+        "editable": true,
+        "fields": [
+            {
+                "name": "risk_multiplier",
+                "type": "int",
+                "label": "Risk",
+                "hint": "Multiplier for min wallet balance",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "rake",
+                "type": "int",
+                "label": "Rake",
+                "hint": "House rake as % of each bet",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            },
+            {
+                "name": "rake_wallet_id",
+                "type": "wallet",
+                "label": "Wallet",
+                "hint": "Wallet to receive rakes",
+                "optional": true,
+                "editable": true,
+                "searchable": true,
+                "sortable": true,
+                "fields": []
+            }
+        ],
+        "enabled": true,
+        "type": "user"
+    },
+    "public_page": {
+        "has_public_page": true,
+        "owner_data_fields": {
+            "name": "name",
+            "description": ""
+        },
+        "client_data_fields": {
+            "public_inputs": [
+                "bet_amount",
+                "client_seed"
+            ]
+        },
+        "action_fields": {
+            "generate_action": true,
+            "generate_payment_logic": true,
+            "wallet_id": "wallet_id",
+            "currency": "",
+            "amount": "max_bet",
+            "amount_source": "owner_data",
+            "paid_flag": "paid"
+        }
+    },
+    "preview_action": {
+        "is_preview_mode": false,
+        "is_settings_preview": false,
+        "is_owner_data_preview": false,
+        "is_client_data_preview": false,
+        "is_public_page_preview": false
+    }
+}
