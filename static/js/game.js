@@ -4,17 +4,14 @@ window.app = Vue.createApp({
   data() {
     return {
       dealersId: null,
-      betAmount: 100,
+      betAmount: null,
+      minBet: minBet,
+      maxBet: maxBet,
       lnAddress: 'test@fitting-sole-wildly.ngrok-free.app',
       gameStatus: 'waiting_for_bet', // waiting_for_bet, bet_placed, game_over
       gameStarted: false,
       gameFinished: false,
       dealerRevealed: false,
-      playerHand: [],
-      dealerHand: [],
-      playerScore: 0,
-      dealerScore: 0,
-      dealerHiddenScore: 0,
       resultMessage: '',
       resultColor: '',
       paymentRequest: '',
@@ -22,10 +19,28 @@ window.app = Vue.createApp({
       showLnAddressDialog: false,
       showPaymentDialog: false,
       currentHandsPlayedId: null,
-      clientSeed: null, // Will be set to payment hash after payment
-      serverSeedHash: null,
-      revealedServerSeed: null,
-      gameHistory: []
+      gameHistory: [],
+      gameState: {
+        id: null,
+        dealers_id: null,
+        status: null,
+        bet_amount: null,
+        player_hand: [],
+        dealer_hand: [],
+        player_score: 0,
+        dealer_score: 0,
+        dealer_hidden_score: 0,
+        outcome: null,
+        payout_amount: 0,
+        payout_sent: false,
+        server_seed_hash: null,
+        client_seed: null,
+        server_seed: null,
+        created_at: null,
+        updated_at: null,
+        ended_at: null,
+        paid: false
+      }
     }
   },
   methods: {
@@ -135,49 +150,36 @@ window.app = Vue.createApp({
         ws.addEventListener('message', async ({data}) => {
           const gameData = JSON.parse(data)
 
-          // Update server seed hash when available (after payment confirmation)
-          if (gameData.server_seed_hash) {
-            this.serverSeedHash = gameData.server_seed_hash
+          // Update the gameState object with new data, transforming card data as needed
+          this.gameState = {
+            ...this.gameState,
+            ...gameData,
+            player_hand: gameData.player_hand
+              ? this.parseCards(gameData.player_hand)
+              : this.gameState.player_hand,
+            dealer_hand: gameData.dealer_hand
+              ? this.parseCards(gameData.dealer_hand)
+              : this.gameState.dealer_hand
           }
 
-          if (gameData.player_hand) {
-            this.playerHand = this.parseCards(gameData.player_hand)
-          }
-          if (gameData.dealer_hand) {
-            this.dealerHand = this.parseCards(gameData.dealer_hand)
-            // Calculate dealer's visible score (first card only) when not revealed
-            if (this.dealerHand.length > 0 && !this.dealerRevealed) {
-              this.dealerHiddenScore = this.getCardValue(this.dealerHand[0])
-            }
-          }
-          if (gameData.player_score !== undefined) {
-            this.playerScore = gameData.player_score
-          }
-          if (gameData.dealer_score !== undefined) {
-            this.dealerScore = gameData.dealer_score
-          }
           // Calculate dealer's visible score (first card only) when not revealed
-          if (this.dealerHand.length > 0 && !this.dealerRevealed) {
-            this.dealerHiddenScore = this.getCardValue(this.dealerHand[0])
+          if (this.gameState.dealer_hand.length > 0 && !this.dealerRevealed) {
+            this.gameState.dealer_hidden_score = this.getCardValue(
+              this.gameState.dealer_hand[0]
+            )
           }
 
-          if (
-            gameData.status === 'finished' ||
-            gameData.status === 'player_bust' ||
-            gameData.status === 'completed'
-          ) {
+          // Update game status and handle completion
+          if (gameData.status === 'completed') {
             this.gameFinished = true
             this.gameStatus = 'game_over'
             this.dealerRevealed = true
 
-            // Show the revealed server seed after the game is over
-            if (gameData.server_seed) {
-              this.revealedServerSeed = gameData.server_seed
-            }
-
+            // Set result message based on outcome
             if (gameData.outcome === 'player_wins') {
               this.resultMessage = 'You Win!'
               this.resultColor = 'green'
+              confettiBothSides()
             } else if (gameData.outcome === 'dealer_wins') {
               this.resultMessage = 'Dealer Wins!'
               this.resultColor = 'red'
@@ -189,6 +191,8 @@ window.app = Vue.createApp({
             // Add game to history
             this.addGameToHistory(gameData)
           }
+          console.log('Game update received:', this.gameState)
+          console.log('Full game data:', gameData)
         })
       } catch (err) {
         console.warn(err)
@@ -271,6 +275,20 @@ window.app = Vue.createApp({
       return parseInt(rank) || 0 // Number cards count as face value
     },
 
+    getOutcomeIcon(outcome) {
+      if (outcome === 'player_wins') return 'sentiment_very_satisfied'
+      if (outcome === 'dealer_wins') return 'sentiment_very_dissatisfied'
+      if (outcome === 'push') return 'sentiment_neutral'
+      return 'help_outline'
+    },
+
+    getOutcomeColor(outcome) {
+      if (outcome === 'player_wins') return 'green'
+      if (outcome === 'dealer_wins') return 'red'
+      if (outcome === 'push') return 'orange'
+      return 'grey'
+    },
+
     formatOutcome(outcome) {
       if (outcome === 'player_wins') return 'Win'
       if (outcome === 'dealer_wins') return 'Loss'
@@ -286,17 +304,33 @@ window.app = Vue.createApp({
     },
 
     addGameToHistory(gameData) {
+      // Use the payout_amount from the API response
+      const payoutAmount = gameData.payout_amount || 0
+
       const gameRecord = {
-        id: this.currentHandsPlayedId,
-        timestamp: new Date().toLocaleTimeString(),
-        betAmount: this.betAmount,
+        id: gameData.id || this.currentHandsPlayedId,
+        created_at: gameData.created_at || new Date().toISOString(),
+        bet_amount: this.betAmount,
+        payout_amount: payoutAmount,
         outcome: gameData.outcome,
-        playerHand: [...this.playerHand],
-        dealerHand: [...this.dealerHand],
-        playerScore: this.playerScore,
-        dealerScore: this.dealerScore,
-        serverSeedHash: this.serverSeedHash,
-        revealedServerSeed: this.revealedServerSeed
+        player_hand: gameData.player_hand
+          ? this.parseCards(gameData.player_hand)
+          : [...this.gameState.player_hand],
+        dealer_hand: gameData.dealer_hand
+          ? this.parseCards(gameData.dealer_hand)
+          : [...this.gameState.dealer_hand],
+        player_score:
+          gameData.player_score !== undefined
+            ? gameData.player_score
+            : this.gameState.player_score,
+        dealer_score:
+          gameData.dealer_score !== undefined
+            ? gameData.dealer_score
+            : this.gameState.dealer_score,
+        server_seed_hash:
+          gameData.server_seed_hash || this.gameState.server_seed_hash,
+        client_seed: gameData.client_seed || this.gameState.client_seed,
+        server_seed: gameData.server_seed || this.gameState.server_seed // Only available after game completion
       }
 
       // Add to the beginning of the array to show most recent games first
@@ -313,22 +347,37 @@ window.app = Vue.createApp({
       this.gameStarted = false
       this.gameFinished = false
       this.dealerRevealed = false
-      this.playerHand = []
-      this.dealerHand = []
-      this.playerScore = 0
-      this.dealerScore = 0
-      this.dealerHiddenScore = 0
       this.resultMessage = ''
       this.resultColor = ''
       this.currentHandsPlayedId = null
-      // Don't reset clientSeed here since it's set after payment
-      // Reset server seed related data
-      this.serverSeedHash = null
-      this.revealedServerSeed = null
+
+      // Reset the gameState object to initial values
+      this.gameState = {
+        id: null,
+        dealers_id: null,
+        status: null,
+        bet_amount: null,
+        player_hand: [],
+        dealer_hand: [],
+        player_score: 0,
+        dealer_score: 0,
+        dealer_hidden_score: 0,
+        outcome: null,
+        payout_amount: 0,
+        payout_sent: false,
+        server_seed_hash: null,
+        client_seed: null,
+        server_seed: null,
+        created_at: null,
+        updated_at: null,
+        ended_at: null,
+        paid: false
+      }
     }
   },
   created() {
     this.dealersId = dealersId
+    this.betAmount = maxBet
     this.newGame()
   }
 })
