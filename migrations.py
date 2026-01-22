@@ -56,6 +56,7 @@ async def m001_extension_settings(db):
             dealer_score INT,
             shoe TEXT,
             outcome TEXT,
+            payout_amount INT,
             client_seed TEXT,
             server_seed TEXT,
             server_seed_hash TEXT,

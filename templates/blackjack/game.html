@@ -9,8 +9,12 @@
       <q-card class="q-pa-lg">
         <q-card-section>
           <div class="row items-center justify-between">
-            <div class="col-auto">
+            <div class="col-auto ellipsis">
               <h4 class="q-my-none">Blackjack Game - {{ public_page_name }}</h4>
+              <div v-if="gameState.server_seed_hash" class="text-caption">
+                <span class="text-grey-8">Server Seed Hash: </span>
+                <span v-text="gameState.server_seed_hash"></span>
+              </div>
             </div>
             <!-- TODO: add a rolling balance until user withdraws -->
             <!-- <div class="col-auto">
@@ -27,7 +31,7 @@
             <h5 class="q-my-sm text-grey-8">Dealer</h5>
             <div class="row items-center justify-center q-gutter-md">
               <div
-                v-for="(card, index) in dealerHand"
+                v-for="(card, index) in gameState.dealer_hand"
                 :key="index"
                 class="card"
                 :class="{ 'hidden-card': index === 1 && !gameFinished && gameStarted }"
@@ -54,14 +58,18 @@
             </div>
             <div class="text-center q-mt-sm">
               <span v-if="dealerRevealed">
-                Score: <span v-text="dealerScore"></span>
+                Score: <span v-text="gameState.dealer_score"></span>
                 <br />
-                <small v-text="getHandAbbreviation(dealerHand, false)"></small>
+                <small
+                  v-text="getHandAbbreviation(gameState.dealer_hand, false)"
+                ></small>
               </span>
               <span v-else-if="gameStarted">
-                Score: <span v-text="dealerHiddenScore"></span>
+                Score: <span v-text="gameState.dealer_hidden_score"></span>
                 <br />
-                <small v-text="getHandAbbreviation(dealerHand, true)"></small>
+                <small
+                  v-text="getHandAbbreviation(gameState.dealer_hand, true)"
+                ></small>
               </span>
             </div>
           </div>
@@ -84,7 +92,7 @@
             <h5 class="q-my-sm text-grey-8">You</h5>
             <div class="row items-center justify-center q-gutter-md">
               <div
-                v-for="(card, index) in playerHand"
+                v-for="(card, index) in gameState.player_hand"
                 :key="index"
                 class="card"
               >
@@ -103,9 +111,11 @@
               </div>
             </div>
             <div class="text-center q-mt-sm">
-              Score: <span v-text="playerScore"></span>
+              Score: <span v-text="gameState.player_score"></span>
               <br />
-              <small v-text="getHandAbbreviation(playerHand, false)"></small>
+              <small
+                v-text="getHandAbbreviation(gameState.player_hand, false)"
+              ></small>
             </div>
           </div>
         </q-card-section>
@@ -118,8 +128,11 @@
               v-model.number="betAmount"
               label="Bet Amount (sats)"
               type="number"
-              min="1"
+              :min="minBet"
+              :max="maxBet"
               class="col-6"
+              :step="1"
+              :hint="`Min: ${minBet} sats, Max: ${maxBet} sats`"
             ></q-input>
           </div>
           <div class="row q-gutter-md justify-center q-mt-md">
@@ -137,7 +150,7 @@
               @click="placeBet"
               unelevated
               color="primary"
-              :disabled="!betAmount || betAmount <= 0 || !lnAddress"
+              :disabled="!betAmount || betAmount < minBet || betAmount > maxBet || !lnAddress"
             >
               Place Bet
             </q-btn>
@@ -185,28 +198,96 @@
       <div class="q-mt-md">
         <q-list>
           <q-expansion-item
-            group="somegroup"
-            icon="explore"
-            label="First"
-            default-opened
+            group="history"
+            icon="history"
+            :label="utils.formatDateFrom(record.ended_at || record.updated_at || record.created_at)"
+            :default-opened="false"
             header-class="text-primary"
-            v-for="hand in gameHistory"
+            v-for="record in gameHistory"
+            :key="record.id"
           >
             <q-item>
               <q-item-section>
-                <q-item-label v-text="hand.id"></q-item-label>
-                <q-item-label caption lines="2"
-                  >Secondary line text. Lorem ipsum dolor sit amet, consectetur
-                  adipiscit elit.</q-item-label
-                >
+                <q-item-label caption
+                  >Game ID: <span v-text="record.id"></span
+                ></q-item-label>
+                <q-item-label class="q-mt-sm">
+                  <strong>Outcome:</strong>
+                  <span
+                    :class="{
+                    'text-green': record.outcome === 'PLAYER_WINS',
+                    'text-red': record.outcome === 'DEALER_WINS',
+                    'text-orange': record.outcome === 'PUSH'
+                  }"
+                    v-text="formatOutcome(record.outcome)"
+                  >
+                  </span>
+                </q-item-label>
+
+                <q-item-label class="q-mt-sm">
+                  <strong>Bet Amount:</strong>
+                  <span v-text="record.bet_amount"></span> sats
+                </q-item-label>
+
+                <q-item-label class="q-mt-sm" v-if="record.payout_amount > 0">
+                  <strong>Payout:</strong>
+                  <span v-text="record.payout_amount"></span> sats
+                </q-item-label>
+
+                <q-item-label class="q-mt-sm">
+                  <strong>Server Seed Hash:</strong><br />
+                  <small
+                    class="text-monospace"
+                    v-text="record.server_seed_hash"
+                  ></small>
+                </q-item-label>
+
+                <q-item-label class="q-mt-sm">
+                  <strong>Client Seed:</strong><br />
+                  <small
+                    class="text-monospace"
+                    v-text="record.client_seed"
+                  ></small>
+                </q-item-label>
+                <q-item-label class="q-mt-sm">
+                  <strong>Server Seed:</strong><br />
+                  <small
+                    class="text-monospace"
+                    v-text="record.server_seed"
+                  ></small>
+                </q-item-label>
+
+                <q-item-label class="q-mt-sm" caption>
+                  <p class="q-mb-none q-mt-sm">
+                    <strong>How to Verify:</strong>
+                  </p>
+                  <p class="q-mb-none">
+                    To verify the game was fair, combine the revealed server
+                    seed and client seed then hash them with SHA256 to verify
+                    the commitment:
+                  </p>
+                  <p class="q-mb-none">
+                    <code
+                      >SHA256(server_seed + client_seed) ==
+                      server_seed_hash</code
+                    >
+                  </p>
+                  <p class="q-mb-none">
+                    The card shuffling algorithm uses this combined seed to
+                    ensure randomness.
+                  </p>
+                </q-item-label>
               </q-item-section>
 
               <q-item-section side top>
                 <q-item-label
                   caption
-                  v-text="utils.formatTimestampFrom(hand.timestamp)"
+                  v-text="utils.formatDate(record.created_at)"
                 ></q-item-label>
-                <q-icon name="star" color="yellow" />
+                <q-icon
+                  :name="getOutcomeIcon(record.outcome)"
+                  :color="getOutcomeColor(record.outcome)"
+                />
               </q-item-section>
             </q-item>
           </q-expansion-item>
@@ -242,6 +323,8 @@
 {% endblock %} {% block scripts %}
 <script>
   const dealersId = '{{ dealers_id }}'
+  const minBet = parseInt('{{ min_bet }}')
+  const maxBet = parseInt('{{ max_bet }}')
 </script>
 <script src="{{ static_url_for('blackjack/static', path='js/game.js') }}"></script>
 <style>

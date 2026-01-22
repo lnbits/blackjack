@@ -3,8 +3,9 @@ import re
 from datetime import datetime, timezone
 from enum import Enum
 
-from lnbits.db import FilterModel
 from pydantic import BaseModel, Field, validator
+
+from lnbits.db import FilterModel
 
 from .helpers import Card, get_hand_value
 
@@ -25,7 +26,22 @@ class CreateDealers(BaseModel):
     def validate_blackjack_payout(cls, v):
         # Validate that the payout is in the format "X:Y" where X and Y are numbers
         if not re.match(r"^\d+:\d+$", v):
-            raise ValueError("Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')")
+            raise ValueError(
+                "Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')"
+            )
+
+        parts = v.split(":")
+        numerator = int(parts[0])
+        denominator = int(parts[1])
+
+        if denominator == 0:
+            raise ValueError("Blackjack payout denominator cannot be zero")
+
+        if numerator < denominator:
+            raise ValueError(
+                "Blackjack payout numerator should be greater than or equal to denominator"
+            )
+
         return v
 
 
@@ -103,6 +119,7 @@ class CreateHandsPlayed(BaseModel):
     client_seed: str | None
     server_seed: str | None = None
     server_seed_hash: str | None = None
+    payout_amount: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -176,3 +193,70 @@ class HandsPlayedFilters(FilterModel):
 
     created_at: datetime | None
     updated_at: datetime | None
+
+
+class GameUpdateData(BaseModel):
+    """Model for sending game updates to the frontend, excluding sensitive data during game."""
+
+    id: str
+    dealers_id: str
+    status: HandStatus
+    bet_amount: int
+    player_hand: str | None
+    dealer_hand: str | None
+    player_score: int | None
+    dealer_score: int | None
+    outcome: HandOutcome | None
+    payout_amount: int | None
+    payout_sent: bool = False
+    created_at: datetime
+    updated_at: datetime
+    ended_at: datetime | None
+    paid: bool = False
+    # Only include these fields when the game is completed
+    server_seed_hash: str | None = None
+    client_seed: str | None = None
+    server_seed: str | None = None
+
+    @classmethod
+    def from_hands_played(
+        cls, hands_played: "HandsPlayed", include_sensitive: bool = False
+    ):
+        """Create a GameUpdateData instance from HandsPlayed, with option to include sensitive data."""
+        dealer_hand = hands_played.dealer_hand
+        if dealer_hand and not include_sensitive:
+            # Hide the dealer's second card if the player is still in the game
+            dealer_cards = json.loads(dealer_hand)
+            if len(dealer_cards) > 1:
+                dealer_cards[1] = {"rank": "Hidden", "suit": "Hidden"}
+                dealer_hand = json.dumps(dealer_cards)
+
+        data = {
+            "id": hands_played.id,
+            "dealers_id": hands_played.dealers_id,
+            "status": hands_played.status,
+            "bet_amount": hands_played.bet_amount,
+            "player_hand": hands_played.player_hand,
+            "dealer_hand": dealer_hand,
+            "player_score": hands_played.player_score,
+            "dealer_score": hands_played.dealer_score,
+            "outcome": hands_played.outcome,
+            "payout_amount": hands_played.payout_amount,
+            "payout_sent": hands_played.payout_sent,
+            "created_at": hands_played.created_at,
+            "updated_at": hands_played.updated_at,
+            "ended_at": hands_played.ended_at,
+            "paid": hands_played.paid,
+            "server_seed_hash": hands_played.server_seed_hash,
+            "client_seed": hands_played.client_seed,
+        }
+
+        # Only include sensitive data if explicitly requested (typically when game is completed)
+        if include_sensitive:
+            data.update(
+                {
+                    "server_seed": hands_played.server_seed,
+                }
+            )
+
+        return cls(**data)
