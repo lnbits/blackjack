@@ -16,7 +16,7 @@ async def m001_extension_settings(db):
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
             risk_multiplier INT,
-            rake INT,
+            rake FLOAT,
             rake_wallet_id TEXT,
             updated_at TIMESTAMP NOT NULL DEFAULT {db.timestamp_now}
         );
