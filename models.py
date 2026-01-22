@@ -3,11 +3,10 @@ import re
 from datetime import datetime, timezone
 from enum import Enum
 
+from lnbits.db import FilterModel
 from pydantic import BaseModel, Field, validator
 
-from lnbits.db import FilterModel
-
-from .helpers import Card, get_hand_value
+from .helpers import Card, get_hand_value, is_valid_email_address
 
 
 ########################### Dealers ############################
@@ -26,9 +25,7 @@ class CreateDealers(BaseModel):
     def validate_blackjack_payout(cls, v):
         # Validate that the payout is in the format "X:Y" where X and Y are numbers
         if not re.match(r"^\d+:\d+$", v):
-            raise ValueError(
-                "Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')"
-            )
+            raise ValueError("Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')")
 
         parts = v.split(":")
         numerator = int(parts[0])
@@ -38,9 +35,7 @@ class CreateDealers(BaseModel):
             raise ValueError("Blackjack payout denominator cannot be zero")
 
         if numerator < denominator:
-            raise ValueError(
-                "Blackjack payout numerator should be greater than or equal to denominator"
-            )
+            raise ValueError("Blackjack payout numerator should be greater than or equal to denominator")
 
         return v
 
@@ -123,6 +118,12 @@ class CreateHandsPlayed(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    @validator("lnaddress")
+    def validate_lnaddress(cls, v):
+        if not is_valid_email_address(v):
+            raise ValueError("Invalid Lightning Address format")
+        return v
+
     def is_player_blackjack(self) -> bool:
         if not self.player_hand:
             return False
@@ -135,6 +136,60 @@ class HandsPlayed(CreateHandsPlayed):
     ended_at: datetime | None
     paid: bool = False
     payout_sent: bool = False
+
+
+class PublicHandsPlayed(BaseModel):
+    """
+    Safe public view of HandsPlayed that excludes sensitive game state like the shoe.
+    """
+
+    id: str
+    dealers_id: str
+    status: HandStatus
+    bet_amount: int
+    lnaddress: str
+    payment_hash: str | None
+    player_hand: str | None
+    dealer_hand: str | None
+    player_score: int | None
+    dealer_score: int | None
+    outcome: HandOutcome | None
+    client_seed: str | None
+    # Exclude shoe!
+    # Server seed hash is public (commitment)
+    server_seed_hash: str | None = None
+    # Server seed is only revealed after game
+    server_seed: str | None = None
+
+    payout_amount: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    ended_at: datetime | None
+    paid: bool
+    payout_sent: bool
+
+    @classmethod
+    def from_db(cls, hands_played: HandsPlayed):
+        # Logic to mask dealer hole card
+        dealer_hand = hands_played.dealer_hand
+        if dealer_hand and hands_played.status != HandStatus.COMPLETED:
+            # Hide the dealer's second card if the player is still in the game
+            try:
+                dealer_cards = json.loads(dealer_hand)
+                if len(dealer_cards) > 1:
+                    dealer_cards[1] = {"rank": "Hidden", "suit": "Hidden"}
+                    dealer_hand = json.dumps(dealer_cards)
+            except json.JSONDecodeError:
+                pass
+
+        data = hands_played.dict(exclude={"shoe"})
+        data["dealer_hand"] = dealer_hand
+
+        # Only include server_seed if game is completed
+        if hands_played.status != HandStatus.COMPLETED:
+            data["server_seed"] = None
+
+        return cls(**data)
 
 
 class UpdateHand(BaseModel):
@@ -219,17 +274,18 @@ class GameUpdateData(BaseModel):
     server_seed: str | None = None
 
     @classmethod
-    def from_hands_played(
-        cls, hands_played: "HandsPlayed", include_sensitive: bool = False
-    ):
+    def from_hands_played(cls, hands_played: "HandsPlayed", include_sensitive: bool = False):
         """Create a GameUpdateData instance from HandsPlayed, with option to include sensitive data."""
         dealer_hand = hands_played.dealer_hand
         if dealer_hand and not include_sensitive:
             # Hide the dealer's second card if the player is still in the game
-            dealer_cards = json.loads(dealer_hand)
-            if len(dealer_cards) > 1:
-                dealer_cards[1] = {"rank": "Hidden", "suit": "Hidden"}
-                dealer_hand = json.dumps(dealer_cards)
+            try:
+                dealer_cards = json.loads(dealer_hand)
+                if len(dealer_cards) > 1:
+                    dealer_cards[1] = {"rank": "Hidden", "suit": "Hidden"}
+                    dealer_hand = json.dumps(dealer_cards)
+            except json.JSONDecodeError:
+                pass  # Should not happen if data is valid
 
         data = {
             "id": hands_played.id,
