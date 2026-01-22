@@ -33,8 +33,11 @@ from .models import (
 
 
 class Deck:
-    def __init__(self, num_decks=1):
-        self.cards = self._create_deck(num_decks)
+    def __init__(self, num_decks=1, cards: list[Card] | None = None):
+        if cards is not None:
+            self.cards = cards
+        else:
+            self.cards = self._create_deck(num_decks)
 
     def _create_deck(self, num_decks):
         suits = ["H", "D", "C", "S"]
@@ -46,8 +49,11 @@ class Deck:
             for rank in ranks
         ]
 
-    def shuffle(self):
-        random.shuffle(self.cards)
+    def shuffle(self, random_instance=None):
+        if random_instance:
+            random_instance.shuffle(self.cards)
+        else:
+            random.shuffle(self.cards)
 
     def deal(self):
         if not self.cards:
@@ -56,6 +62,18 @@ class Deck:
 
 
 async def start_game(hands_played_id: str) -> HandsPlayed:
+    """
+    Initializes and starts a new blackjack game.
+
+    Args:
+        hands_played_id (str): The ID of the hands played record.
+
+    Returns:
+        HandsPlayed: The updated hands played record.
+
+    Raises:
+        ValueError: If the hands played ID is invalid or seeds are missing.
+    """
     hands_played = await get_hands_played_by_id(hands_played_id)
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
@@ -84,7 +102,7 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
 
     deck = Deck(num_decks=dealer.decks or 1)
     # Shuffle using the game-specific random instance
-    game_random.shuffle(deck.cards)
+    deck.shuffle(random_instance=game_random)
 
     # Deal initial cards and ensure they are not None
     player_card1 = deck.deal()
@@ -133,6 +151,19 @@ async def payment_request_for_hands_played(
     dealers_id: str,
     data: CreateHandsPlayed,
 ) -> HandsPlayedPaymentRequest:
+    """
+    Creates a payment request (invoice) for a new bet.
+
+    Args:
+        dealers_id (str): The ID of the dealer.
+        data (CreateHandsPlayed): The data for creating a hands played record.
+
+    Returns:
+        HandsPlayedPaymentRequest: The payment request details.
+
+    Raises:
+        ValueError: If the dealer ID is invalid or bet amount is out of limits.
+    """
     dealer = await get_dealers_by_id(dealers_id)
     if not dealer:
         raise ValueError("Invalid dealers ID.")
@@ -166,6 +197,15 @@ async def payment_request_for_hands_played(
 
 
 async def payment_received_for_hands_played(payment: Payment) -> bool:
+    """
+    Handles the payment received event for a hands played record.
+
+    Args:
+        payment (Payment): The payment object.
+
+    Returns:
+        bool: True if processed successfully, False otherwise.
+    """
     hands_played_id = payment.extra.get("hands_played_id")
     if not hands_played_id:
         logger.warning("Payment does not have a hands_played_id in extra.")
@@ -195,6 +235,18 @@ async def payment_received_for_hands_played(payment: Payment) -> bool:
 
 
 async def player_hit(hands_played_id: str) -> HandsPlayed:
+    """
+    Processes a 'hit' action for the player.
+
+    Args:
+        hands_played_id (str): The ID of the hands played record.
+
+    Returns:
+        HandsPlayed: The updated hands played record.
+
+    Raises:
+        ValueError: If the hands played ID is invalid or game state is incorrect.
+    """
     hands_played = await get_hands_played_by_id(hands_played_id)
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
@@ -214,10 +266,9 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
     if not hands_played.shoe or not hands_played.player_hand:
         raise ValueError("Game has not been started correctly.")
 
-    deck = Deck()
-    deck.cards = [Card.from_dict(c) for c in json.loads(hands_played.shoe)]
-
+    deck = Deck(cards=[Card.from_dict(c) for c in json.loads(hands_played.shoe)])
     player_hand = [Card.from_dict(c) for c in json.loads(hands_played.player_hand)]
+    
     new_card = deck.deal()
     if new_card:
         player_hand.append(new_card)
@@ -248,11 +299,6 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
                 hands_played.payout_amount = final_payout
     elif hands_played.player_score == 21:
         # Player got 21, automatically stand and resolve dealer turn
-        # Ensure hands_played is not None before calling resolve_dealer_turn
-        if not hands_played:
-            raise ValueError(
-                "Failed to retrieve hands_played for resolving dealer turn."
-            )
         hands_played = await resolve_dealer_turn(hands_played)
     else:
         # Game continues
@@ -271,6 +317,18 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
 
 
 async def player_stand(hands_played_id: str) -> HandsPlayed:
+    """
+    Processes a 'stand' action for the player.
+
+    Args:
+        hands_played_id (str): The ID of the hands played record.
+
+    Returns:
+        HandsPlayed: The updated hands played record.
+
+    Raises:
+        ValueError: If the hands played ID is invalid or game state is incorrect.
+    """
     hands_played = await get_hands_played_by_id(hands_played_id)
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
@@ -314,8 +372,7 @@ async def resolve_dealer_turn(hands_played: HandsPlayed) -> HandsPlayed:
     if not hands_played.shoe or not hands_played.dealer_hand:
         raise ValueError("Game has not been started correctly.")
 
-    deck = Deck()
-    deck.cards = [Card.from_dict(c) for c in json.loads(hands_played.shoe)]
+    deck = Deck(cards=[Card.from_dict(c) for c in json.loads(hands_played.shoe)])
     dealer_hand = [Card.from_dict(c) for c in json.loads(hands_played.dealer_hand)]
     # remove cards with "Hidden" rank/suit if any
     dealer_hand = [
@@ -437,6 +494,7 @@ async def process_payout(hands_played: HandsPlayed) -> None:
         rake_percentage = settings.rake if settings else 0
 
         # Apply rake to the total payout amount (original bet + winnings)
+        rake_amount = 0
         if hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH]:
             rake_amount = int(payout_amount * (rake_percentage / 100))
             final_payout = payout_amount - rake_amount
@@ -465,13 +523,33 @@ async def process_payout(hands_played: HandsPlayed) -> None:
                 description=f"Blackjack payout for hands_played_id: {hands_played.id}",
                 extra={"tag": "blackjack_payout", "hands_played_id": hands_played.id},
             )
+            
+            # Transfer Rake to Rake Wallet
+            if rake_amount > 0 and settings.rake_wallet_id:
+                try:
+                    rake_invoice = await create_invoice(
+                        wallet_id=settings.rake_wallet_id,
+                        amount=rake_amount,
+                        memo=f"Rake for Blackjack Hand {hands_played.id}",
+                        extra={"tag": "blackjack_rake", "hands_played_id": hands_played.id}
+                    )
+                    await pay_invoice(
+                        payment_request=rake_invoice.bolt11,
+                        wallet_id=dealer.wallet_id,
+                        description=f"Rake payment for hand {hands_played.id}",
+                        extra={"tag": "blackjack_rake_payment", "hands_played_id": hands_played.id}
+                    )
+                    logger.info(f"Rake of {rake_amount} sats sent to {settings.rake_wallet_id}")
+                except Exception as e:
+                    logger.error(f"Failed to pay rake for hand {hands_played.id}: {e}")
+
             hands_played.payout_sent = True
             hands_played.payout_amount = final_payout  # Store the actual payout amount
             await update_hands_played(hands_played)
 
-    except Exception as e:
-        logger.error(
-            f"Error processing payout for hands_played_id {hands_played.id}: {e}"
+    except (ValueError, Exception) as e:
+        logger.exception(
+            f"Error processing payout for hands_played_id {hands_played.id}"
         )
         # Log the error but don't re-raise to avoid disrupting the game flow
 
