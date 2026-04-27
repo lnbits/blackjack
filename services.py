@@ -368,11 +368,14 @@ async def resolve_dealer_turn(hands_played: HandsPlayed) -> HandsPlayed:
     hands_played.ended_at = datetime.now(timezone.utc)
 
     await _calculate_and_store_payout(hands_played, dealer)
+    hands_played = await update_hands_played(hands_played)
 
     if hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH] and hands_played.lnaddress:
         await process_payout(hands_played)
+        updated_hands_played = await get_hands_played_by_id(hands_played.id)
+        return updated_hands_played or hands_played
 
-    return await update_hands_played(hands_played)
+    return hands_played
 
 
 def _dealer_draw(dealer_hand: list[Card], deck: Deck, dealer: Dealers) -> list[Card]:
@@ -466,6 +469,7 @@ async def process_payout(hands_played: HandsPlayed) -> None:
             await pay_invoice(
                 payment_request=payment_request,
                 wallet_id=dealer.wallet_id,
+                max_sat=final_payout,
                 description=f"Blackjack payout: {hands_played.id}",
                 extra={"tag": "blackjack_payout", "hands_played_id": hands_played.id},
             )
@@ -477,10 +481,10 @@ async def process_payout(hands_played: HandsPlayed) -> None:
             await reset_hands_played_payout_claim(hands_played.id)
             payout_claimed = False
 
-    except Exception:
+    except Exception as exc:
         if payout_claimed:
             await reset_hands_played_payout_claim(hands_played.id)
-        logger.exception(f"Error payout for {hands_played.id}")
+        logger.exception(f"Error payout for {hands_played.id}: {type(exc).__name__}: {exc!s}")
 
 
 def _calculate_final_payout(hands_played: HandsPlayed, payout_amount: int, rake_percentage: float) -> tuple[int, int]:
@@ -509,6 +513,7 @@ async def _handle_rake_transfer(hands_played: HandsPlayed, dealer: Dealers, sett
             await pay_invoice(
                 payment_request=rake_invoice.bolt11,
                 wallet_id=dealer.wallet_id,
+                max_sat=rake_amount,
                 description=f"Rake payment for hand {hands_played.id}",
                 extra={
                     "tag": "blackjack_rake_payment",

@@ -201,10 +201,10 @@ async def claim_hands_played_payout(hands_played_id: str) -> bool:
     result = await db.execute(
         """
             UPDATE blackjack.hands_played
-            SET payout_sent = true, updated_at = :updated_at
+            SET payout_sent = true
             WHERE id = :id AND payout_sent = false
         """,
-        {"id": hands_played_id, "updated_at": datetime.now(timezone.utc)},
+        {"id": hands_played_id},
     )
     return result.rowcount == 1
 
@@ -213,10 +213,10 @@ async def reset_hands_played_payout_claim(hands_played_id: str) -> None:
     await db.execute(
         """
             UPDATE blackjack.hands_played
-            SET payout_sent = false, updated_at = :updated_at
+            SET payout_sent = false
             WHERE id = :id
         """,
-        {"id": hands_played_id, "updated_at": datetime.now(timezone.utc)},
+        {"id": hands_played_id},
     )
 
 

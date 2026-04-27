@@ -3,8 +3,9 @@ import re
 from datetime import datetime, timezone
 from enum import Enum
 
-from lnbits.db import FilterModel
 from pydantic import BaseModel, Field, validator
+
+from lnbits.db import FilterModel
 
 from .helpers import Card, get_hand_value, is_valid_email_address
 
@@ -40,7 +41,9 @@ class CreateDealers(BaseModel):
     def validate_blackjack_payout(cls, v):
         # Validate that the payout is in the format "X:Y" where X and Y are numbers
         if not re.match(r"^\d+:\d+$", v):
-            raise ValueError("Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')")
+            raise ValueError(
+                "Blackjack payout must be in the format 'X:Y' (e.g., '3:2', '6:5')"
+            )
 
         parts = v.split(":")
         numerator = int(parts[0])
@@ -50,7 +53,9 @@ class CreateDealers(BaseModel):
             raise ValueError("Blackjack payout denominator cannot be zero")
 
         if numerator < denominator:
-            raise ValueError("Blackjack payout numerator should be greater than or equal to denominator")
+            raise ValueError(
+                "Blackjack payout numerator should be greater than or equal to denominator"
+            )
 
         return v
 
@@ -63,6 +68,7 @@ class Dealers(CreateDealers):
 class PublicDealer(BaseModel):
     id: str
     name: str
+    wallet_id: str
     min_bet: int
     max_bet: int
     decks: int | None = None
@@ -227,7 +233,9 @@ class PublicHandsPlayed(BaseModel):
             except json.JSONDecodeError:
                 pass
 
-        data = hands_played.dict(exclude={"shoe", "lnaddress", "payment_hash", "client_seed"})
+        data = hands_played.dict(
+            exclude={"shoe", "lnaddress", "payment_hash", "client_seed"}
+        )
         data["dealer_hand"] = dealer_hand
 
         # Only include server_seed if game is completed
@@ -319,7 +327,9 @@ class GameUpdateData(BaseModel):
     server_seed: str | None = None
 
     @classmethod
-    def from_hands_played(cls, hands_played: "HandsPlayed", include_sensitive: bool = False):
+    def from_hands_played(
+        cls, hands_played: "HandsPlayed", include_sensitive: bool = False
+    ):
         """Create a GameUpdateData instance from HandsPlayed, with option to include sensitive data."""
         dealer_hand = hands_played.dealer_hand
         if dealer_hand and not include_sensitive:
