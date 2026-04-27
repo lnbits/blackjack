@@ -1,6 +1,6 @@
 import pytest
 
-from blackjack.crud import (
+from ..crud import (
     create_dealers,
     delete_dealers,
     get_dealers,
@@ -8,7 +8,7 @@ from blackjack.crud import (
     get_dealers_ids_by_wallet,
     update_dealers,
 )
-from blackjack.models import CreateDealers, Dealers
+from ..models import CreateDealers, Dealers
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,9 @@ async def test_update_dealers():
     updated_data = Dealers(**dealer.dict())
     updated_data.name = "updated_dealer_name"
     updated_dealer = await update_dealers(updated_data)
+    assert updated_dealer.name == "updated_dealer_name"
     retrieved_dealer = await get_dealers("test_wallet", dealer.id)
+    assert retrieved_dealer is not None
     assert retrieved_dealer.name == "updated_dealer_name"
 
 

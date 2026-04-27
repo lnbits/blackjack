@@ -1,3 +1,4 @@
+import hashlib
 import json
 import random
 from datetime import datetime, timezone
@@ -13,10 +14,13 @@ from lnbits.core.services import (
 from loguru import logger
 
 from .crud import (
+    claim_hands_played_payout,
     create_hands_played,
+    get_active_dealers_by_id,
     get_dealers_by_id,
     get_hands_played_by_id,
     get_or_create_blackjack_settings,
+    reset_hands_played_payout_claim,
     update_hands_played,
 )
 from .helpers import Card, generate_server_seed_and_hash, get_hand_value
@@ -41,12 +45,7 @@ class Deck:
     def _create_deck(self, num_decks):
         suits = ["H", "D", "C", "S"]
         ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-        return [
-            Card(suit, rank)
-            for _ in range(num_decks)
-            for suit in suits
-            for rank in ranks
-        ]
+        return [Card(suit, rank) for _ in range(num_decks) for suit in suits for rank in ranks]
 
     def shuffle(self, random_instance=None):
         if random_instance:
@@ -77,23 +76,23 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
 
+    if not hands_played.paid:
+        raise ValueError("Cannot start an unpaid hand.")
+
     # Check if the game has already been initialized (shoe exists and hands are dealt)
     if hands_played.shoe and hands_played.player_hand and hands_played.dealer_hand:
         # If already initialized, just return the current state
         return hands_played
 
-    if (
-        not hands_played.server_seed
-        or not hands_played.client_seed
-        or not hands_played.server_seed_hash
-    ):
+    if not hands_played.server_seed or not hands_played.client_seed or not hands_played.server_seed_hash:
         raise ValueError("Missing seeds for provably fair game.")
 
-    rng_seed = int(hands_played.server_seed_hash.encode("utf-8").hex(), 16)
+    rng_material = f"{hands_played.server_seed}{hands_played.client_seed}"
+    rng_seed = int(hashlib.sha256(rng_material.encode("utf-8")).hexdigest(), 16)
 
-    dealer = await get_dealers_by_id(hands_played.dealers_id)
+    dealer = await get_active_dealers_by_id(hands_played.dealers_id)
     if not dealer:
-        raise ValueError("Dealer not found for this game.")
+        raise ValueError("Dealer not found or inactive for this game.")
 
     # Create a separate random instance instead of using global random state
     game_random = random.Random()
@@ -123,12 +122,8 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
     dealer_score = get_hand_value(filtered_dealer_hand)
 
     # serialize hands and shoe
-    hands_played.player_hand = json.dumps(
-        [card.to_dict() for card in filtered_player_hand]
-    )
-    hands_played.dealer_hand = json.dumps(
-        [card.to_dict() for card in filtered_dealer_hand]
-    )
+    hands_played.player_hand = json.dumps([card.to_dict() for card in filtered_player_hand])
+    hands_played.dealer_hand = json.dumps([card.to_dict() for card in filtered_dealer_hand])
     hands_played.shoe = json.dumps([card.to_dict() for card in deck.cards])
     hands_played.player_score = player_score
     hands_played.dealer_score = dealer_score
@@ -136,13 +131,9 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
 
     await update_hands_played(hands_played)
     # Send game update without sensitive data during the game
-    game_update_data = GameUpdateData.from_hands_played(
-        hands_played, include_sensitive=False
-    )
+    game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=False)
     logger.debug("### WEBSOCKET UPDATE START_GAME ###")
-    await websocket_updater(
-        hands_played.id, json.dumps(game_update_data.dict(), default=str)
-    )
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
     return hands_played
 
 
@@ -163,9 +154,9 @@ async def payment_request_for_hands_played(
     Raises:
         ValueError: If the dealer ID is invalid or bet amount is out of limits.
     """
-    dealer = await get_dealers_by_id(dealers_id)
+    dealer = await get_active_dealers_by_id(dealers_id)
     if not dealer:
-        raise ValueError("Invalid dealers ID.")
+        raise ValueError("Invalid or inactive dealers ID.")
 
     # check if bet amount is within dealer limits
     if data.bet_amount < dealer.min_bet or data.bet_amount > dealer.max_bet:
@@ -191,6 +182,7 @@ async def payment_request_for_hands_played(
         hands_played_id=hands_played.id,
         payment_hash=payment.payment_hash,
         payment_request=payment.bolt11,
+        server_seed_hash=server_seed_hash,
     )
     return hands_played_resp
 
@@ -222,13 +214,9 @@ async def payment_received_for_hands_played(payment: Payment) -> bool:
     await update_hands_played(hands_played)
     logger.info(f"Hands Played {hands_played_id} paid.")
     # Send game update without sensitive data during the game
-    game_update_data = GameUpdateData.from_hands_played(
-        hands_played, include_sensitive=False
-    )
+    game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=False)
     logger.debug("### WEBSOCKET UPDATE PAYMENT_RECEIVED ###")
-    await websocket_updater(
-        hands_played.id, json.dumps(game_update_data.dict(), default=str)
-    )
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
     await start_game(hands_played_id)
     return True
 
@@ -250,12 +238,14 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
 
+    if not hands_played.paid:
+        raise ValueError("Cannot play an unpaid hand.")
+
+    if hands_played.status != HandStatus.IN_PROGRESS:
+        raise ValueError("Game is not in progress.")
+
     # Check if the game has started properly (shoe exists and hands are dealt)
-    if (
-        not hands_played.shoe
-        or not hands_played.player_hand
-        or not hands_played.dealer_hand
-    ):
+    if not hands_played.shoe or not hands_played.player_hand or not hands_played.dealer_hand:
         # If the game hasn't started properly yet, start it first
         await start_game(hands_played_id)
         hands_played = await get_hands_played_by_id(hands_played_id)
@@ -298,9 +288,7 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
         hands_played, include_sensitive=hands_played.status == HandStatus.COMPLETED
     )
     logger.debug("### WEBSOCKET UPDATE PLAYER_HIT ###")
-    await websocket_updater(
-        hands_played.id, json.dumps(game_update_data.dict(), default=str)
-    )
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
     return hands_played
 
 
@@ -321,12 +309,14 @@ async def player_stand(hands_played_id: str) -> HandsPlayed:
     if not hands_played:
         raise ValueError("Invalid hands_played_id.")
 
+    if not hands_played.paid:
+        raise ValueError("Cannot play an unpaid hand.")
+
+    if hands_played.status != HandStatus.IN_PROGRESS:
+        raise ValueError("Game is not in progress.")
+
     # Check if the game has started properly (shoe exists and hands are dealt)
-    if (
-        not hands_played.shoe
-        or not hands_played.player_hand
-        or not hands_played.dealer_hand
-    ):
+    if not hands_played.shoe or not hands_played.player_hand or not hands_played.dealer_hand:
         # If the game hasn't started properly yet, start it first
         await start_game(hands_played_id)
         hands_played = await get_hands_played_by_id(hands_played_id)
@@ -345,13 +335,9 @@ async def player_stand(hands_played_id: str) -> HandsPlayed:
 
     # Send game update - include sensitive data if the game is completed
     include_sensitive = hands_played.status == HandStatus.COMPLETED
-    game_update_data = GameUpdateData.from_hands_played(
-        hands_played, include_sensitive=include_sensitive
-    )
+    game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=include_sensitive)
     logger.debug("### WEBSOCKET UPDATE PLAYER_STAND ###")
-    await websocket_updater(
-        hands_played.id, json.dumps(game_update_data.dict(), default=str)
-    )
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
     return hands_played
 
 
@@ -362,9 +348,7 @@ async def resolve_dealer_turn(hands_played: HandsPlayed) -> HandsPlayed:
 
     deck = Deck(cards=[Card.from_dict(c) for c in json.loads(hands_played.shoe)])
     dealer_hand = [Card.from_dict(c) for c in json.loads(hands_played.dealer_hand)]
-    dealer_hand = [
-        card for card in dealer_hand if card.rank != "Hidden" and card.suit != "Hidden"
-    ]
+    dealer_hand = [card for card in dealer_hand if card.rank != "Hidden" and card.suit != "Hidden"]
 
     dealer = await get_dealers_by_id(hands_played.dealers_id)
     if not dealer:
@@ -373,26 +357,19 @@ async def resolve_dealer_turn(hands_played: HandsPlayed) -> HandsPlayed:
     dealer_hand = _dealer_draw(dealer_hand, deck, dealer)
 
     hands_played.dealer_hand = json.dumps([card.to_dict() for card in dealer_hand])
-    hands_played.dealer_score = get_hand_value(
-        [card for card in dealer_hand if card is not None]
-    )
+    hands_played.dealer_score = get_hand_value([card for card in dealer_hand if card is not None])
     hands_played.shoe = json.dumps([card.to_dict() for card in deck.cards])
 
     if hands_played.player_score is None or hands_played.dealer_score is None:
         raise ValueError("Player or dealer score not set.")
 
-    hands_played.outcome = _determine_outcome(
-        hands_played.player_score, hands_played.dealer_score
-    )
+    hands_played.outcome = _determine_outcome(hands_played.player_score, hands_played.dealer_score)
     hands_played.status = HandStatus.COMPLETED
     hands_played.ended_at = datetime.now(timezone.utc)
 
     await _calculate_and_store_payout(hands_played, dealer)
 
-    if (
-        hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH]
-        and hands_played.lnaddress
-    ):
+    if hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH] and hands_played.lnaddress:
         await process_payout(hands_played)
 
     return await update_hands_played(hands_played)
@@ -406,9 +383,7 @@ def _dealer_draw(dealer_hand: list[Card], deck: Deck, dealer: Dealers) -> list[C
 
         if dealer.hit_soft_17 and score == 17:
             aces = [card for card in filtered_hand if card.rank == "A"]
-            non_ace_total = sum(
-                card.value for card in filtered_hand if card.rank != "A"
-            )
+            non_ace_total = sum(card.value for card in filtered_hand if card.rank != "A")
             if aces and non_ace_total == 6:
                 should_hit = True
 
@@ -440,7 +415,7 @@ async def _calculate_and_store_payout(hands_played: HandsPlayed, dealer: Dealers
         settings = await get_or_create_blackjack_settings(user_id)
         rake_percentage = settings.rake if settings else 0
         if hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH]:
-            rake_amount = int(potential_payout * (rake_percentage / 100))
+            rake_amount = _calculate_rake_amount(hands_played, potential_payout, rake_percentage)
             hands_played.payout_amount = potential_payout - rake_amount
         else:
             hands_played.payout_amount = 0
@@ -452,14 +427,22 @@ async def process_payout(hands_played: HandsPlayed) -> None:
         logger.warning(f"Payout already sent for hands_played_id {hands_played.id}")
         return
 
+    payout_claimed = False
     try:
         dealer = await get_dealers_by_id(hands_played.dealers_id)
         if not dealer or not hands_played.lnaddress:
             return
 
+        if not await claim_hands_played_payout(hands_played.id):
+            logger.warning(f"Payout already claimed for hands_played_id {hands_played.id}")
+            return
+        payout_claimed = True
+
         wallet = await get_wallet(dealer.wallet_id)
         user_id = wallet.user if wallet else None
         if not user_id:
+            await reset_hands_played_payout_claim(hands_played.id)
+            payout_claimed = False
             return
 
         payout_amount = _calculate_payout_amount(hands_played, dealer)
@@ -467,18 +450,18 @@ async def process_payout(hands_played: HandsPlayed) -> None:
         rake_percentage = settings.rake if settings else 0
 
         if not hands_played.outcome:
+            await reset_hands_played_payout_claim(hands_played.id)
+            payout_claimed = False
             return
 
-        final_payout, rake_amount = _calculate_final_payout(
-            hands_played.outcome, payout_amount, rake_percentage
-        )
+        final_payout, rake_amount = _calculate_final_payout(hands_played, payout_amount, rake_percentage)
 
         if final_payout <= 0:
+            await reset_hands_played_payout_claim(hands_played.id)
+            payout_claimed = False
             return
 
-        payment_request = await get_pr_from_lnurl(
-            hands_played.lnaddress, int(final_payout * 1000)
-        )
+        payment_request = await get_pr_from_lnurl(hands_played.lnaddress, int(final_payout * 1000))
         if payment_request:
             await pay_invoice(
                 payment_request=payment_request,
@@ -490,25 +473,31 @@ async def process_payout(hands_played: HandsPlayed) -> None:
             hands_played.payout_sent = True
             hands_played.payout_amount = final_payout
             await update_hands_played(hands_played)
+        else:
+            await reset_hands_played_payout_claim(hands_played.id)
+            payout_claimed = False
 
     except Exception:
+        if payout_claimed:
+            await reset_hands_played_payout_claim(hands_played.id)
         logger.exception(f"Error payout for {hands_played.id}")
 
 
-def _calculate_final_payout(
-    outcome: HandOutcome, payout_amount: int, rake_percentage: float
-) -> tuple[int, int]:
-    if outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH]:
-        rake_amount = int(payout_amount * (rake_percentage / 100))
+def _calculate_final_payout(hands_played: HandsPlayed, payout_amount: int, rake_percentage: float) -> tuple[int, int]:
+    if hands_played.outcome in [HandOutcome.PLAYER_WINS, HandOutcome.PUSH]:
+        rake_amount = _calculate_rake_amount(hands_played, payout_amount, rake_percentage)
 
         return payout_amount - rake_amount, rake_amount
 
     return 0, 0
 
 
-async def _handle_rake_transfer(
-    hands_played: HandsPlayed, dealer: Dealers, settings, rake_amount: int
-):
+def _calculate_rake_amount(hands_played: HandsPlayed, payout_amount: int, rake_percentage: float) -> int:
+    profit = max(payout_amount - hands_played.bet_amount, 0)
+    return int(profit * (rake_percentage / 100))
+
+
+async def _handle_rake_transfer(hands_played: HandsPlayed, dealer: Dealers, settings, rake_amount: int):
     if rake_amount > 0 and settings.rake_wallet_id:
         try:
             rake_invoice = await create_invoice(
@@ -543,9 +532,7 @@ def _calculate_payout_amount(hands_played: HandsPlayed, dealer: Dealers) -> int:
                 if payout_denominator == 0:
                     raise ValueError("Invalid blackjack payout - division by zero")
                 payout_multiplier = payout_numerator / payout_denominator
-                return hands_played.bet_amount + int(
-                    hands_played.bet_amount * payout_multiplier
-                )
+                return hands_played.bet_amount + int(hands_played.bet_amount * payout_multiplier)
             except ValueError:
                 raise ValueError("Invalid blackjack payout values") from None
         else:

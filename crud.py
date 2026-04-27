@@ -56,6 +56,19 @@ async def get_dealers_by_id(
     )
 
 
+async def get_active_dealers_by_id(
+    dealers_id: str,
+) -> Dealers | None:
+    return await db.fetchone(
+        """
+            SELECT * FROM blackjack.dealers
+            WHERE id = :id AND active = true
+        """,
+        {"id": dealers_id},
+        Dealers,
+    )
+
+
 async def get_dealers_ids_by_wallet(
     wallet_id: str,
 ) -> list[str]:
@@ -73,9 +86,13 @@ async def get_dealers_ids_by_wallet(
 async def get_dealers_paginated(
     wallet_ids: list[str] | None = None,
     filters: Filters[DealersFilters] | None = None,
+    active_only: bool = False,
 ) -> Page[Dealers]:
     where = []
     values = {}
+    if active_only:
+        where.append("active = true")
+
     if wallet_ids:
         id_clause = []
         for i, wallet_id in enumerate(wallet_ids):
@@ -178,6 +195,29 @@ async def update_hands_played(data: HandsPlayed) -> HandsPlayed:
     data.updated_at = datetime.now(timezone.utc)
     await db.update("blackjack.hands_played", data)
     return data
+
+
+async def claim_hands_played_payout(hands_played_id: str) -> bool:
+    result = await db.execute(
+        """
+            UPDATE blackjack.hands_played
+            SET payout_sent = true, updated_at = :updated_at
+            WHERE id = :id AND payout_sent = false
+        """,
+        {"id": hands_played_id, "updated_at": datetime.now(timezone.utc)},
+    )
+    return result.rowcount == 1
+
+
+async def reset_hands_played_payout_claim(hands_played_id: str) -> None:
+    await db.execute(
+        """
+            UPDATE blackjack.hands_played
+            SET payout_sent = false, updated_at = :updated_at
+            WHERE id = :id
+        """,
+        {"id": hands_played_id, "updated_at": datetime.now(timezone.utc)},
+    )
 
 
 async def delete_hands_played(dealers_id: str, hands_played_id: str) -> None:

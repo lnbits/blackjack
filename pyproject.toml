@@ -1,10 +1,10 @@
 [project]
 name = "blackjack"
-version = "0.0.4"
+version = "0.0.7"
 requires-python = ">=3.10,<3.13"
 description = "<<A BlackJack Dealer>>"
 authors = []
-urls = { Homepage = "https://lnbits.com", Repository = "https://github.com/lnbits/tpos" }
+urls = { Homepage = "https://lnbits.com", Repository = "https://github.com/lnbits/blackjack" }
 dependencies = [ "lnbits>1" ]
 
 [tool.poetry]
@@ -30,6 +30,7 @@ module = [
   "pydantic.*",
 ]
 ignore_missing_imports = "True"
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 log_cli = false

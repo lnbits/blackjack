@@ -345,7 +345,6 @@ window.app = Vue.createApp({
           `/blackjack/api/v1/hands_played/paginated?${params}`
         )
         this.handsPlayedList = data.data
-        console.log(this.handsPlayedList)
         this.handsPlayedTable.pagination.rowsNumber = data.total
       } catch (error) {
         console.error(`Error fetching hands played: ${error}`)

@@ -14,6 +14,7 @@ from .crud import (
     create_dealers,
     delete_dealers,
     delete_hands_played,
+    get_active_dealers_by_id,
     get_dealers,
     get_dealers_by_id,
     get_dealers_ids_by_wallet,
@@ -35,6 +36,7 @@ from .models import (
     HandsPlayedFilters,
     HandsPlayedPaymentRequest,
     HandStatus,
+    PublicDealer,
     PublicHandsPlayed,
 )
 from .services import (
@@ -100,24 +102,11 @@ async def api_get_dealers_paginated(
     name="Public Dealers List",
     summary="get list of active dealers",
     response_description="list of active dealers",
-    response_model=Page[Dealers],
+    response_model=Page[PublicDealer],
 )
-async def api_get_public_dealers() -> Page[Dealers]:
-    # We want only active dealers for public view.
-    # Assuming get_dealers_paginated handles empty wallet_ids to return all?
-    # No, get_dealers_paginated in crud.py builds WHERE clause on wallet_ids if provided.
-    # If wallet_ids is None, it returns all.
-    # But we should probably filter by 'active=True'.
-    # For now, let's return all. Frontend can filter or we add a filter.
-    # We should enforce active=True via filters if possible.
-
-    # Manually create filters for active=True
-    filters = Filters(filters=[])  # Empty filters
-    # Ideally we'd pass a custom filter, but lnbits filters are query params.
-    # Let's just fetch all for now or modify CRUD to support simple where args better.
-    # crud.get_dealers_paginated takes 'filters' which is lnbits.db.Filters.
-
-    return await get_dealers_paginated()
+async def api_get_public_dealers() -> Page[PublicDealer]:
+    page = await get_dealers_paginated(active_only=True)
+    return Page(data=[PublicDealer.from_db(dealer) for dealer in page.data], total=page.total)
 
 
 @blackjack_api_router.get(
@@ -125,16 +114,16 @@ async def api_get_public_dealers() -> Page[Dealers]:
     name="Get Dealers",
     summary="Get the dealers with this id.",
     response_description="An dealers or 404 if not found",
-    response_model=Dealers,
+    response_model=PublicDealer,
 )
 async def api_get_dealers(
     dealers_id: str,
-) -> Dealers:
-    dealers = await get_dealers_by_id(dealers_id)
+) -> PublicDealer:
+    dealers = await get_active_dealers_by_id(dealers_id)
     if not dealers:
         raise HTTPException(HTTPStatus.NOT_FOUND, "Dealers not found.")
 
-    return dealers
+    return PublicDealer.from_db(dealers)
 
 
 @blackjack_api_router.delete(
@@ -175,8 +164,15 @@ async def api_player_hit(
         raise HTTPException(HTTPStatus.NOT_FOUND, "Hands Played not found.")
     if hands_played.status == HandStatus.COMPLETED:
         raise HTTPException(HTTPStatus.BAD_REQUEST, "Game is already completed.")
+    if not hands_played.paid:
+        raise HTTPException(HTTPStatus.PAYMENT_REQUIRED, "Payment is required before playing.")
+    if hands_played.status != HandStatus.IN_PROGRESS:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, "Game is not in progress.")
 
-    hands_played = await player_hit(hands_played_id)
+    try:
+        hands_played = await player_hit(hands_played_id)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
     return PublicHandsPlayed.from_db(hands_played)
 
 
@@ -195,8 +191,15 @@ async def api_player_stand(
         raise HTTPException(HTTPStatus.NOT_FOUND, "Hands Played not found.")
     if hands_played.status == HandStatus.COMPLETED:
         raise HTTPException(HTTPStatus.BAD_REQUEST, "Game is already completed.")
+    if not hands_played.paid:
+        raise HTTPException(HTTPStatus.PAYMENT_REQUIRED, "Payment is required before playing.")
+    if hands_played.status != HandStatus.IN_PROGRESS:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, "Game is not in progress.")
 
-    hands_played = await player_stand(hands_played_id)
+    try:
+        hands_played = await player_stand(hands_played_id)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
     return PublicHandsPlayed.from_db(hands_played)
 
 
@@ -212,7 +215,10 @@ async def api_create_hands_played(
     dealers_id: str,
     data: CreateHandsPlayed,
 ) -> HandsPlayedPaymentRequest | None:
-    return await payment_request_for_hands_played(dealers_id, data)
+    try:
+        return await payment_request_for_hands_played(dealers_id, data)
+    except ValueError as exc:
+        raise HTTPException(HTTPStatus.BAD_REQUEST, str(exc)) from exc
 
 
 @blackjack_api_router.put(
@@ -342,4 +348,6 @@ async def api_update_extension_settings(
 ) -> ExtensionSettings:
     if data.user_id != user.id:
         raise HTTPException(HTTPStatus.FORBIDDEN, "Not your settings.")
+    if data.rake_wallet_id and data.rake_wallet_id not in [wallet.id for wallet in user.wallets]:
+        raise HTTPException(HTTPStatus.FORBIDDEN, "Not your rake wallet.")
     return await update_blackjack_settings(data)

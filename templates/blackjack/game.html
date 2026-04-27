@@ -262,19 +262,14 @@
                     <strong>How to Verify:</strong>
                   </p>
                   <p class="q-mb-none">
-                    To verify the game was fair, combine the revealed server
-                    seed and client seed then hash them with SHA256 to verify
-                    the commitment:
+                    To verify the server commitment, hash the revealed server
+                    seed with SHA256:
                   </p>
                   <p class="q-mb-none">
-                    <code
-                      >SHA256(server_seed + client_seed) ==
-                      server_seed_hash</code
-                    >
+                    <code>SHA256(server_seed) == server_seed_hash</code>
                   </p>
                   <p class="q-mb-none">
-                    The card shuffling algorithm uses this combined seed to
-                    ensure randomness.
+                    The card shuffle seed is SHA256(server_seed + client_seed).
                   </p>
                 </q-item-label>
               </q-item-section>

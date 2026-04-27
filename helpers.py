@@ -45,6 +45,5 @@ def get_hand_value(hand: Sequence[Card]) -> int:
 
 def generate_server_seed_and_hash(client_seed: str) -> tuple[str, str]:
     server_seed = secrets.token_hex(32)  # 64 hex characters = 32 bytes
-    combined_seed = f"{server_seed}{client_seed}"
-    server_seed_hash = hashlib.sha256(combined_seed.encode("utf-8")).hexdigest()
+    server_seed_hash = hashlib.sha256(server_seed.encode("utf-8")).hexdigest()
     return server_seed, server_seed_hash

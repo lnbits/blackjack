@@ -7,7 +7,8 @@ window.app = Vue.createApp({
       betAmount: null,
       minBet: minBet,
       maxBet: maxBet,
-      lnAddress: 'test@fitting-sole-wildly.ngrok-free.app',
+      lnAddress: '',
+      clientSeed: null,
       gameStatus: 'waiting_for_bet', // waiting_for_bet, bet_placed, game_over
       gameStarted: false,
       gameFinished: false,
@@ -34,7 +35,6 @@ window.app = Vue.createApp({
         payout_amount: 0,
         payout_sent: false,
         server_seed_hash: null,
-        client_seed: null,
         server_seed: null,
         created_at: null,
         updated_at: null,
@@ -89,6 +89,7 @@ window.app = Vue.createApp({
         this.currentHandsPlayedId = data.hands_played_id
         this.paymentHash = data.payment_hash
         this.paymentRequest = data.payment_request
+        this.gameState.server_seed_hash = data.server_seed_hash
 
         this.showLnAddressDialog = false
         this.showPaymentDialog = true
@@ -114,20 +115,7 @@ window.app = Vue.createApp({
         ws.addEventListener('message', async ({data}) => {
           const payment = JSON.parse(data)
           if (payment.pending === false) {
-            Quasar.Notify.create({
-              type: 'positive',
-              message: 'Payment confirmed! Starting game...'
-            })
-
-            // Set the client seed to the payment hash for provably fair gameplay
-            this.clientSeed = payment.payment_hash
-
-            this.showPaymentDialog = false
-            this.gameStatus = 'bet_placed'
-            this.gameStarted = true
-
-            this.listenForGameUpdates(this.currentHandsPlayedId)
-
+            await this.handlePaymentConfirmed()
             ws.close()
           }
         })
@@ -140,6 +128,21 @@ window.app = Vue.createApp({
       }
     },
 
+    async handlePaymentConfirmed() {
+      if (this.gameStarted) return
+
+      Quasar.Notify.create({
+        type: 'positive',
+        message: 'Payment confirmed! Starting game...'
+      })
+
+      this.clientSeed = this.paymentHash
+      this.showPaymentDialog = false
+      this.gameStatus = 'bet_placed'
+      this.gameStarted = true
+      this.listenForGameUpdates(this.currentHandsPlayedId)
+    },
+
     listenForGameUpdates(handsPlayedId) {
       try {
         const url = new URL(window.location)
@@ -149,53 +152,49 @@ window.app = Vue.createApp({
 
         ws.addEventListener('message', async ({data}) => {
           const gameData = JSON.parse(data)
-
-          // Update the gameState object with new data, transforming card data as needed
-          this.gameState = {
-            ...this.gameState,
-            ...gameData,
-            player_hand: gameData.player_hand
-              ? this.parseCards(gameData.player_hand)
-              : this.gameState.player_hand,
-            dealer_hand: gameData.dealer_hand
-              ? this.parseCards(gameData.dealer_hand)
-              : this.gameState.dealer_hand
-          }
-
-          // Calculate dealer's visible score (first card only) when not revealed
-          if (this.gameState.dealer_hand.length > 0 && !this.dealerRevealed) {
-            this.gameState.dealer_hidden_score = this.getCardValue(
-              this.gameState.dealer_hand[0]
-            )
-          }
-
-          // Update game status and handle completion
-          if (gameData.status === 'completed') {
-            this.gameFinished = true
-            this.gameStatus = 'game_over'
-            this.dealerRevealed = true
-
-            // Set result message based on outcome
-            if (gameData.outcome === 'player_wins') {
-              this.resultMessage = 'You Win!'
-              this.resultColor = 'green'
-              confettiBothSides()
-            } else if (gameData.outcome === 'dealer_wins') {
-              this.resultMessage = 'Dealer Wins!'
-              this.resultColor = 'red'
-            } else if (gameData.outcome === 'push') {
-              this.resultMessage = 'Push (Tie)!'
-              this.resultColor = 'orange'
-            }
-
-            // Add game to history
-            this.addGameToHistory(gameData)
-          }
-          console.log('Game update received:', this.gameState)
-          console.log('Full game data:', gameData)
+          this.applyGameUpdate(gameData)
         })
       } catch (err) {
         console.warn(err)
+      }
+    },
+
+    applyGameUpdate(gameData) {
+      this.gameState = {
+        ...this.gameState,
+        ...gameData,
+        player_hand: gameData.player_hand
+          ? this.parseCards(gameData.player_hand)
+          : this.gameState.player_hand,
+        dealer_hand: gameData.dealer_hand
+          ? this.parseCards(gameData.dealer_hand)
+          : this.gameState.dealer_hand
+      }
+
+      if (this.gameState.dealer_hand.length > 0 && !this.dealerRevealed) {
+        this.gameState.dealer_hidden_score = this.getCardValue(
+          this.gameState.dealer_hand[0]
+        )
+      }
+
+      if (gameData.status === 'completed') {
+        this.gameFinished = true
+        this.gameStatus = 'game_over'
+        this.dealerRevealed = true
+
+        if (gameData.outcome === 'player_wins') {
+          this.resultMessage = 'You Win!'
+          this.resultColor = 'green'
+          confettiBothSides()
+        } else if (gameData.outcome === 'dealer_wins') {
+          this.resultMessage = 'Dealer Wins!'
+          this.resultColor = 'red'
+        } else if (gameData.outcome === 'push') {
+          this.resultMessage = 'Push (Tie)!'
+          this.resultColor = 'orange'
+        }
+
+        this.addGameToHistory(gameData)
       }
     },
 
@@ -329,7 +328,7 @@ window.app = Vue.createApp({
             : this.gameState.dealer_score,
         server_seed_hash:
           gameData.server_seed_hash || this.gameState.server_seed_hash,
-        client_seed: gameData.client_seed || this.gameState.client_seed,
+        client_seed: this.clientSeed,
         server_seed: gameData.server_seed || this.gameState.server_seed // Only available after game completion
       }
 
@@ -350,6 +349,9 @@ window.app = Vue.createApp({
       this.resultMessage = ''
       this.resultColor = ''
       this.currentHandsPlayedId = null
+      this.clientSeed = null
+      this.paymentHash = ''
+      this.paymentRequest = ''
 
       // Reset the gameState object to initial values
       this.gameState = {
@@ -366,7 +368,6 @@ window.app = Vue.createApp({
         payout_amount: 0,
         payout_sent: false,
         server_seed_hash: null,
-        client_seed: null,
         server_seed: null,
         created_at: null,
         updated_at: null,

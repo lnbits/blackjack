@@ -28,7 +28,7 @@ async def on_invoice_paid(payment: Payment) -> None:
     if payment.extra.get("tag") != "blackjack":
         return
 
-    logger.info(f"Invoice paid for blackjack: {payment.payment_hash}")
+    logger.info("Invoice paid for blackjack")
 
     try:
         await payment_received_for_hands_played(payment)

@@ -8,7 +8,7 @@ from lnbits.core.models import User
 from lnbits.decorators import check_user_exists
 from lnbits.helpers import template_renderer
 
-from .crud import get_dealers_by_id
+from .crud import get_active_dealers_by_id
 
 blackjack_generic_router = APIRouter()
 
@@ -35,7 +35,7 @@ async def index(req: Request, user: User = Depends(check_user_exists)):
 
 @blackjack_generic_router.get("/{dealers_id}")
 async def dealers_public_page(req: Request, dealers_id: str):
-    dealers = await get_dealers_by_id(dealers_id)
+    dealers = await get_active_dealers_by_id(dealers_id)
     if not dealers:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Dealers does not exist.")
 
