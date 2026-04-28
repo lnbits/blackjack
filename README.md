@@ -53,6 +53,7 @@ The extension is intentionally narrow:
 2. Create a dealer.
 
 3. Pick the dealer wallet and configure the table:
+
    - Dealer name
    - Minimum bet
    - Maximum bet
@@ -73,16 +74,19 @@ The extension is intentionally narrow:
 1. Open the public game page for a dealer.
 
 2. Enter:
+
    - Bet amount
    - Lightning Address for winnings
 
 3. Pay the invoice to start the hand.
 
 4. Play the round:
+
    - `Hit` for another card
    - `Stand` to end your turn
 
 5. The game resolves automatically:
+
    - player busts
    - dealer busts
    - player wins
