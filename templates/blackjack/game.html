@@ -16,12 +16,6 @@
                 <span v-text="gameState.server_seed_hash"></span>
               </div>
             </div>
-            <!-- TODO: add a rolling balance until user withdraws -->
-            <!-- <div class="col-auto">
-              <q-chip color="primary" text-color="white">
-                Balance: <span id="balance">0</span> sats
-              </q-chip>
-            </div> -->
           </div>
         </q-card-section>
 
@@ -121,7 +115,7 @@
         </q-card-section>
 
         <q-card-section v-if="gameStatus === 'waiting_for_bet'">
-          <div class="row q-gutter-md justify-center">
+          <div class="row q-col-gutter-md justify-center">
             <q-input
               filled
               dense
@@ -130,21 +124,37 @@
               type="number"
               :min="minBet"
               :max="maxBet"
-              class="col-6"
+              class="col-12 col-md-6"
               :step="1"
               :hint="`Min: ${minBet} sats, Max: ${maxBet} sats`"
             ></q-input>
-          </div>
-          <div class="row q-gutter-md justify-center q-mt-md">
             <q-input
               filled
               dense
               v-model="lnAddress"
               label="LN Address for potential payout"
               type="text"
-              class="col-6"
+              class="col-12 col-md-6"
+            ></q-input>
+            <q-input
+              filled
+              dense
+              v-model="clientSeed"
+              label="Client Seed (optional, for provably fair)"
+              type="text"
+              hint="If blank, seed is generated randomly on the browser ('client seed:payment_hash')"
+              class="col-12"
+            >
+              <template v-slot:after>
+                <q-icon
+                  name="change_circle"
+                  @click="() => generateRandomSeed()"
+                  class="cursor-pointer"
+                ></q-icon> </template
             ></q-input>
           </div>
+          <!-- <div class="row q-gutter-md justify-center q-mt-md">
+          </div> -->
           <div class="row q-mt-md q-gutter-md justify-center">
             <q-btn
               @click="placeBet"
@@ -269,7 +279,8 @@
                     <code>SHA256(server_seed) == server_seed_hash</code>
                   </p>
                   <p class="q-mb-none">
-                    The card shuffle seed is SHA256(server_seed + client_seed).
+                    The card shuffle seed is SHA256(server_seed + ':' +
+                    client_seed).
                   </p>
                 </q-item-label>
               </q-item-section>

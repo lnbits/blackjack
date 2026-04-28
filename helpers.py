@@ -43,7 +43,20 @@ def get_hand_value(hand: Sequence[Card]) -> int:
     return value
 
 
-def generate_server_seed_and_hash(client_seed: str) -> tuple[str, str]:
+def hash_server_seed(server_seed: str) -> str:
+    return hashlib.sha256(server_seed.encode("utf-8")).hexdigest()
+
+
+def generate_server_seed_and_hash() -> tuple[str, str]:
     server_seed = secrets.token_hex(32)  # 64 hex characters = 32 bytes
-    server_seed_hash = hashlib.sha256(server_seed.encode("utf-8")).hexdigest()
-    return server_seed, server_seed_hash
+    return server_seed, hash_server_seed(server_seed)
+
+
+def derive_client_seed(user_seed: str | None, payment_hash: str) -> str:
+    user_seed = user_seed.strip() if user_seed else ""
+    return f"{user_seed}:{payment_hash}" if user_seed else payment_hash
+
+
+def derive_shuffle_seed(server_seed: str, client_seed: str) -> int:
+    seed_material = f"{server_seed}:{client_seed}"
+    return int(hashlib.sha256(seed_material.encode("utf-8")).hexdigest(), 16)

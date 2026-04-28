@@ -6,6 +6,7 @@ from lnbits.core.models import Payment
 
 from .. import services
 from ..crud import create_dealers, get_hands_played_by_id
+from ..helpers import hash_server_seed
 from ..models import CreateDealers, CreateHandsPlayed, HandStatus
 from ..services import (
     payment_received_for_hands_played,
@@ -75,7 +76,10 @@ async def test_paid_hand_happy_flow(mock_lnbits_services):
     assert hand.dealer_hand is None
     assert hand.server_seed is not None
     assert hand.server_seed_hash is not None
+    assert hand.server_seed_hash == hash_server_seed(hand.server_seed)
+    assert hand.client_seed == payment_response.payment_hash
     assert payment_response.payment_hash is not None
+    assert payment_response.client_seed == payment_response.payment_hash
 
     await payment_received_for_hands_played(fake_payment(payment_response.payment_hash, hand.id))
 
@@ -96,6 +100,122 @@ async def test_paid_hand_happy_flow(mock_lnbits_services):
     assert hand.status == HandStatus.COMPLETED
     assert hand.outcome is not None
     assert hand.server_seed is not None
+
+
+@pytest.mark.asyncio
+async def test_user_client_seed_is_combined_with_payment_hash(mock_lnbits_services):
+    dealer = await create_dealers(
+        CreateDealers(
+            name="test_dealer",
+            wallet_id="test_wallet",
+            min_bet=10,
+            max_bet=100,
+            decks=1,
+        )
+    )
+
+    payment_response = await payment_request_for_hands_played(
+        dealer.id,
+        CreateHandsPlayed(
+            dealers_id=dealer.id,
+            bet_amount=10,
+            lnaddress="test@lnaddress.com",
+            client_seed="player-seed",
+            payment_hash=None,
+        ),
+    )
+    hand = await get_hands_played_by_id(payment_response.hands_played_id)
+
+    assert hand is not None
+    assert hand.client_seed == "player-seed:test_payment_hash"
+    assert payment_response.client_seed == "player-seed:test_payment_hash"
+    assert hand.server_seed is not None
+    assert hand.server_seed_hash == hash_server_seed(hand.server_seed)
+
+
+@pytest.mark.asyncio
+async def test_payment_websocket_update_includes_dealt_cards(monkeypatch):
+    updates = []
+
+    async def create_invoice(**kwargs):
+        return fake_payment("test_payment_hash")
+
+    async def websocket_updater(channel, data):
+        updates.append((channel, json.loads(data)))
+
+    async def process_payout(*args, **kwargs):
+        return None
+
+    async def get_wallet(*args, **kwargs):
+        return SimpleNamespace(user="test_user")
+
+    monkeypatch.setattr(services, "create_invoice", create_invoice)
+    monkeypatch.setattr(services, "websocket_updater", websocket_updater)
+    monkeypatch.setattr(services, "process_payout", process_payout)
+    monkeypatch.setattr(services, "get_wallet", get_wallet)
+
+    dealer = await create_dealers(
+        CreateDealers(
+            name="test_dealer",
+            wallet_id="test_wallet",
+            min_bet=10,
+            max_bet=100,
+            decks=1,
+        )
+    )
+    payment_response = await payment_request_for_hands_played(
+        dealer.id,
+        CreateHandsPlayed(
+            dealers_id=dealer.id,
+            bet_amount=10,
+            lnaddress="test@lnaddress.com",
+            client_seed=None,
+            payment_hash=None,
+        ),
+    )
+
+    await payment_received_for_hands_played(
+        fake_payment(payment_response.payment_hash, payment_response.hands_played_id)
+    )
+
+    assert len(updates) == 1
+    _, update = updates[0]
+    assert len(json.loads(update["player_hand"] or "[]")) == 2
+    assert len(json.loads(update["dealer_hand"] or "[]")) == 2
+
+
+@pytest.mark.asyncio
+async def test_duplicate_payment_event_does_not_regress_completed_hand(
+    mock_lnbits_services,
+):
+    dealer = await create_dealers(
+        CreateDealers(
+            name="test_dealer",
+            wallet_id="test_wallet",
+            min_bet=10,
+            max_bet=100,
+            decks=1,
+        )
+    )
+    payment_response = await payment_request_for_hands_played(
+        dealer.id,
+        CreateHandsPlayed(
+            dealers_id=dealer.id,
+            bet_amount=10,
+            lnaddress="test@lnaddress.com",
+            client_seed=None,
+            payment_hash=None,
+        ),
+    )
+    payment = fake_payment(payment_response.payment_hash, payment_response.hands_played_id)
+
+    await payment_received_for_hands_played(payment)
+    await player_stand(payment_response.hands_played_id)
+    await payment_received_for_hands_played(payment)
+
+    hand = await get_hands_played_by_id(payment_response.hands_played_id)
+    assert hand is not None
+    assert hand.status == HandStatus.COMPLETED
 
 
 @pytest.mark.asyncio

@@ -3,9 +3,8 @@ import re
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field, validator
-
 from lnbits.db import FilterModel
+from pydantic import BaseModel, Field, validator
 
 from .helpers import Card, get_hand_value, is_valid_email_address
 
@@ -255,6 +254,7 @@ class HandsPlayedPaymentRequest(BaseModel):
     payment_hash: str | None = None
     payment_request: str | None = None
     server_seed_hash: str | None = None
+    client_seed: str | None = None
 
 
 class HandsPlayedFilters(FilterModel):

@@ -1,4 +1,3 @@
-import hashlib
 import json
 import random
 from datetime import datetime, timezone
@@ -23,7 +22,13 @@ from .crud import (
     reset_hands_played_payout_claim,
     update_hands_played,
 )
-from .helpers import Card, generate_server_seed_and_hash, get_hand_value
+from .helpers import (
+    Card,
+    derive_client_seed,
+    derive_shuffle_seed,
+    generate_server_seed_and_hash,
+    get_hand_value,
+)
 from .models import (
     CreateHandsPlayed,
     Dealers,
@@ -87,8 +92,7 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
     if not hands_played.server_seed or not hands_played.client_seed or not hands_played.server_seed_hash:
         raise ValueError("Missing seeds for provably fair game.")
 
-    rng_material = f"{hands_played.server_seed}{hands_played.client_seed}"
-    rng_seed = int(hashlib.sha256(rng_material.encode("utf-8")).hexdigest(), 16)
+    rng_seed = derive_shuffle_seed(hands_played.server_seed, hands_played.client_seed)
 
     dealer = await get_active_dealers_by_id(hands_played.dealers_id)
     if not dealer:
@@ -164,6 +168,9 @@ async def payment_request_for_hands_played(
 
     data.status = HandStatus.PENDING
     hands_played = await create_hands_played(data)
+    server_seed, server_seed_hash = generate_server_seed_and_hash()
+    hands_played.server_seed_hash = server_seed_hash
+    hands_played.server_seed = server_seed
 
     payment: Payment = await create_invoice(
         wallet_id=dealer.wallet_id,
@@ -171,11 +178,7 @@ async def payment_request_for_hands_played(
         extra={"tag": "blackjack", "hands_played_id": hands_played.id},
         memo=f"Payment for {dealer.name}. Hands Played ID: {hands_played.id}",
     )
-    client_seed = payment.payment_hash
-    server_seed, server_seed_hash = generate_server_seed_and_hash(client_seed)
-    hands_played.client_seed = client_seed
-    hands_played.server_seed_hash = server_seed_hash
-    hands_played.server_seed = server_seed
+    hands_played.client_seed = derive_client_seed(data.client_seed, payment.payment_hash)
     await update_hands_played(hands_played)
 
     hands_played_resp = HandsPlayedPaymentRequest(
@@ -183,6 +186,7 @@ async def payment_request_for_hands_played(
         payment_hash=payment.payment_hash,
         payment_request=payment.bolt11,
         server_seed_hash=server_seed_hash,
+        client_seed=hands_played.client_seed,
     )
     return hands_played_resp
 
@@ -207,16 +211,19 @@ async def payment_received_for_hands_played(payment: Payment) -> bool:
         logger.warning(f"No hands played found for ID: {hands_played_id}")
         return False
 
+    if hands_played.paid:
+        if hands_played.status != HandStatus.COMPLETED and (
+            not hands_played.shoe or not hands_played.player_hand or not hands_played.dealer_hand
+        ):
+            await start_game(hands_played_id)
+        return True
+
     # Update the payment hash in the hands_played record
     hands_played.payment_hash = payment.payment_hash
     hands_played.paid = True
     hands_played.status = HandStatus.IN_PROGRESS
     await update_hands_played(hands_played)
     logger.info(f"Hands Played {hands_played_id} paid.")
-    # Send game update without sensitive data during the game
-    game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=False)
-    logger.debug("### WEBSOCKET UPDATE PAYMENT_RECEIVED ###")
-    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
     await start_game(hands_played_id)
     return True
 

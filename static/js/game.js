@@ -72,11 +72,13 @@ window.app = Vue.createApp({
       }
 
       try {
+        if (!this.clientSeed) this.generateRandomSeed()
+
         const requestData = {
           dealers_id: this.dealersId,
           bet_amount: parseInt(this.betAmount),
-          lnaddress: this.lnAddress
-          // client_seed will be set to payment hash after payment confirmation
+          lnaddress: this.lnAddress,
+          client_seed: this.clientSeed
         }
 
         const {data} = await LNbits.api.request(
@@ -89,6 +91,7 @@ window.app = Vue.createApp({
         this.currentHandsPlayedId = data.hands_played_id
         this.paymentHash = data.payment_hash
         this.paymentRequest = data.payment_request
+        this.clientSeed = data.client_seed || this.clientSeed
         this.gameState.server_seed_hash = data.server_seed_hash
 
         this.showLnAddressDialog = false
@@ -136,11 +139,26 @@ window.app = Vue.createApp({
         message: 'Payment confirmed! Starting game...'
       })
 
-      this.clientSeed = this.paymentHash
       this.showPaymentDialog = false
       this.gameStatus = 'bet_placed'
       this.gameStarted = true
       this.listenForGameUpdates(this.currentHandsPlayedId)
+      await this.loadCurrentHand()
+    },
+
+    async loadCurrentHand() {
+      if (!this.currentHandsPlayedId) return
+
+      try {
+        const {data} = await LNbits.api.request(
+          'GET',
+          `/blackjack/api/v1/hands_played/${this.currentHandsPlayedId}`,
+          null
+        )
+        this.applyGameUpdate(data)
+      } catch (error) {
+        LNbits.utils.notifyApiError(error)
+      }
     },
 
     listenForGameUpdates(handsPlayedId) {
@@ -209,6 +227,24 @@ window.app = Vue.createApp({
         console.error('Error parsing cards:', e)
         return []
       }
+    },
+
+    generateRandomSeed(length = 16) {
+      const charset =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+      let result = ''
+      if (window.crypto && window.crypto.getRandomValues) {
+        const randomValues = new Uint32Array(length)
+        window.crypto.getRandomValues(randomValues)
+        for (let i = 0; i < length; i++) {
+          result += charset[randomValues[i] % charset.length]
+        }
+      } else {
+        for (let i = 0; i < length; i++) {
+          result += charset[Math.floor(Math.random() * charset.length)]
+        }
+      }
+      this.clientSeed = result
     },
 
     async hit() {
