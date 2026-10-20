@@ -23,7 +23,7 @@ async def create_dealers(data: CreateDealers) -> Dealers:
     dealer_id = urlsafe_short_hash()
     dealers = Dealers(
         id=dealer_id,
-        **data.dict(),
+        **data.model_dump(),
     )
     await db.insert("blackjack.dealers", dealers)
     return dealers
@@ -132,7 +132,7 @@ async def delete_dealers(wallet_id: str, dealers_id: str) -> None:
 
 
 async def create_hands_played(data: CreateHandsPlayed) -> HandsPlayed:
-    hands_played = HandsPlayed(**data.dict(), id=urlsafe_short_hash())
+    hands_played = HandsPlayed(**data.model_dump(), id=urlsafe_short_hash())
     await db.insert("blackjack.hands_played", hands_played)
     return hands_played
 
