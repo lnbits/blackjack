@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from lnbits.core.models import Payment
@@ -175,7 +176,7 @@ async def test_payment_websocket_update_includes_dealt_cards(monkeypatch):
     )
 
     await payment_received_for_hands_played(
-        fake_payment(payment_response.payment_hash, payment_response.hands_played_id)
+        fake_payment(cast(str, payment_response.payment_hash), payment_response.hands_played_id)
     )
 
     assert len(updates) == 1
@@ -207,7 +208,7 @@ async def test_duplicate_payment_event_does_not_regress_completed_hand(
             payment_hash=None,
         ),
     )
-    payment = fake_payment(payment_response.payment_hash, payment_response.hands_played_id)
+    payment = fake_payment(cast(str, payment_response.payment_hash), payment_response.hands_played_id)
 
     await payment_received_for_hands_played(payment)
     await player_stand(payment_response.hands_played_id)

@@ -137,7 +137,7 @@ async def start_game(hands_played_id: str) -> HandsPlayed:
     # Send game update without sensitive data during the game
     game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=False)
     logger.debug("### WEBSOCKET UPDATE START_GAME ###")
-    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.model_dump(), default=str))
     return hands_played
 
 
@@ -295,7 +295,7 @@ async def player_hit(hands_played_id: str) -> HandsPlayed:
         hands_played, include_sensitive=hands_played.status == HandStatus.COMPLETED
     )
     logger.debug("### WEBSOCKET UPDATE PLAYER_HIT ###")
-    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.model_dump(), default=str))
     return hands_played
 
 
@@ -344,7 +344,7 @@ async def player_stand(hands_played_id: str) -> HandsPlayed:
     include_sensitive = hands_played.status == HandStatus.COMPLETED
     game_update_data = GameUpdateData.from_hands_played(hands_played, include_sensitive=include_sensitive)
     logger.debug("### WEBSOCKET UPDATE PLAYER_STAND ###")
-    await websocket_updater(hands_played.id, json.dumps(game_update_data.dict(), default=str))
+    await websocket_updater(hands_played.id, json.dumps(game_update_data.model_dump(), default=str))
     return hands_played
 
 

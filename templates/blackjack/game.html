@@ -328,9 +328,9 @@
 </div>
 {% endblock %} {% block scripts %}
 <script>
-  const dealersId = '{{ dealers_id }}'
-  const minBet = parseInt('{{ min_bet }}')
-  const maxBet = parseInt('{{ max_bet }}')
+  const dealersId = "{{ dealers_id }}";
+  const minBet = parseInt("{{ min_bet }}");
+  const maxBet = parseInt("{{ max_bet }}");
 </script>
 <script src="{{ static_url_for('blackjack/static', path='js/game.js') }}"></script>
 <style>

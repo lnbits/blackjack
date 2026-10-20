@@ -74,7 +74,7 @@ async def api_update_dealers(
     dealer = await get_dealers(data.wallet_id, dealers_id)
     if not dealer:
         raise HTTPException(HTTPStatus.NOT_FOUND, "Dealers not found.")
-    dealer = await update_dealers(Dealers(**{**dealer.dict(), **data.dict()}))
+    dealer = await update_dealers(Dealers(**{**dealer.model_dump(), **data.model_dump()}))
     return dealer
 
 
@@ -244,7 +244,7 @@ async def api_update_hands_played(
     if dealer.wallet_id not in [wallet.id for wallet in user.wallets]:
         raise HTTPException(HTTPStatus.FORBIDDEN, "Not your dealers.")
 
-    hands_played = await update_hands_played(HandsPlayed(**{**hands_played.dict(), **data.dict()}))
+    hands_played = await update_hands_played(HandsPlayed(**{**hands_played.model_dump(), **data.model_dump()}))
     return PublicHandsPlayed.from_db(hands_played)
 
 

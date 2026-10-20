@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from lnbits.db import FilterModel
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from .helpers import Card, get_hand_value, is_valid_email_address
 
@@ -21,22 +21,25 @@ class CreateDealers(BaseModel):
     active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @validator("min_bet", "max_bet", "decks")
-    def validate_positive_ints(cls, v, field):
-        if v is None and field.name == "decks":
+    @field_validator("min_bet", "max_bet", "decks")
+    @classmethod
+    def validate_positive_ints(cls, v, info: ValidationInfo):
+        if v is None and info.field_name == "decks":
             return v
         if v <= 0:
-            raise ValueError(f"{field.name} must be greater than zero")
+            raise ValueError(f"{info.field_name} must be greater than zero")
         return v
 
-    @validator("max_bet")
-    def validate_bet_limits(cls, v, values):
-        min_bet = values.get("min_bet")
+    @field_validator("max_bet")
+    @classmethod
+    def validate_bet_limits(cls, v, info: ValidationInfo):
+        min_bet = info.data.get("min_bet")
         if min_bet and v < min_bet:
             raise ValueError("max_bet must be greater than or equal to min_bet")
         return v
 
-    @validator("blackjack_payout")
+    @field_validator("blackjack_payout")
+    @classmethod
     def validate_blackjack_payout(cls, v):
         # Validate that the payout is in the format "X:Y" where X and Y are numbers
         if not re.match(r"^\d+:\d+$", v):
@@ -73,7 +76,7 @@ class PublicDealer(BaseModel):
 
     @classmethod
     def from_db(cls, dealer: Dealers):
-        return cls.parse_obj(dealer.dict())
+        return cls.model_validate(dealer.model_dump())
 
 
 class DealersFilters(FilterModel):
@@ -101,8 +104,8 @@ class DealersFilters(FilterModel):
         "updated_at",
     ]
 
-    created_at: datetime | None
-    updated_at: datetime | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ExtensionSettings(BaseModel):
@@ -113,13 +116,15 @@ class ExtensionSettings(BaseModel):
     rake_wallet_id: str | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @validator("risk_multiplier")
+    @field_validator("risk_multiplier")
+    @classmethod
     def validate_risk_multiplier(cls, v):
         if v < 1:
             raise ValueError("risk_multiplier must be greater than zero")
         return v
 
-    @validator("rake")
+    @field_validator("rake")
+    @classmethod
     def validate_rake(cls, v):
         if v < 0 or v > 100:
             raise ValueError("rake must be between 0 and 100")
@@ -161,13 +166,15 @@ class CreateHandsPlayed(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @validator("lnaddress")
+    @field_validator("lnaddress")
+    @classmethod
     def validate_lnaddress(cls, v):
         if not is_valid_email_address(v):
             raise ValueError("Invalid Lightning Address format")
         return v
 
-    @validator("bet_amount")
+    @field_validator("bet_amount")
+    @classmethod
     def validate_bet_amount(cls, v):
         if v <= 0:
             raise ValueError("bet_amount must be greater than zero")
@@ -196,11 +203,11 @@ class PublicHandsPlayed(BaseModel):
     dealers_id: str
     status: HandStatus
     bet_amount: int
-    player_hand: str | None
-    dealer_hand: str | None
-    player_score: int | None
-    dealer_score: int | None
-    outcome: HandOutcome | None
+    player_hand: str | None = None
+    dealer_hand: str | None = None
+    player_score: int | None = None
+    dealer_score: int | None = None
+    outcome: HandOutcome | None = None
     # Exclude shoe!
     # Server seed hash is public (commitment)
     server_seed_hash: str | None = None
@@ -210,7 +217,7 @@ class PublicHandsPlayed(BaseModel):
     payout_amount: int | None = None
     created_at: datetime
     updated_at: datetime
-    ended_at: datetime | None
+    ended_at: datetime | None = None
     paid: bool
     payout_sent: bool
 
@@ -228,19 +235,19 @@ class PublicHandsPlayed(BaseModel):
             except json.JSONDecodeError:
                 pass
 
-        data = hands_played.dict(exclude={"shoe", "lnaddress", "payment_hash", "client_seed"})
+        data = hands_played.model_dump(exclude={"shoe", "lnaddress", "payment_hash", "client_seed"})
         data["dealer_hand"] = dealer_hand
 
         # Only include server_seed if game is completed
         if hands_played.status != HandStatus.COMPLETED:
             data["server_seed"] = None
 
-        return cls.parse_obj(data)
+        return cls.model_validate(data)
 
 
 class UpdateHand(BaseModel):
-    status: HandStatus | None
-    outcome: HandOutcome | None
+    status: HandStatus | None = None
+    outcome: HandOutcome | None = None
 
 
 class HandsPlayedPaymentRequest(BaseModel):
@@ -294,8 +301,8 @@ class HandsPlayedFilters(FilterModel):
         "updated_at",
     ]
 
-    created_at: datetime | None
-    updated_at: datetime | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class GameUpdateData(BaseModel):
@@ -305,16 +312,16 @@ class GameUpdateData(BaseModel):
     dealers_id: str
     status: HandStatus
     bet_amount: int
-    player_hand: str | None
-    dealer_hand: str | None
-    player_score: int | None
-    dealer_score: int | None
-    outcome: HandOutcome | None
-    payout_amount: int | None
+    player_hand: str | None = None
+    dealer_hand: str | None = None
+    player_score: int | None = None
+    dealer_score: int | None = None
+    outcome: HandOutcome | None = None
+    payout_amount: int | None = None
     payout_sent: bool = False
     created_at: datetime
     updated_at: datetime
-    ended_at: datetime | None
+    ended_at: datetime | None = None
     paid: bool = False
     # Only include these fields when the game is completed
     server_seed_hash: str | None = None
@@ -361,4 +368,4 @@ class GameUpdateData(BaseModel):
                 }
             )
 
-        return cls.parse_obj(data)
+        return cls.model_validate(data)
