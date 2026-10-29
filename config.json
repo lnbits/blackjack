@@ -3,8 +3,8 @@
   "short_description": "A BlackJack Dealer",
   "tile": "/blackjack/static/image/blackjack.png",
   "tile_attribution": "https://www.flaticon.com/free-icons/blackjack",
-  "version": "0.1.0",
-  "min_lnbits_version": "1.7.0",
+  "version": "0.2.0",
+  "min_lnbits_version": "1.7.0-rc1",
   "contributors": [
     {
       "name": "talvasconcelos",

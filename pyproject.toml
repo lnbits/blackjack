@@ -1,16 +1,22 @@
 [project]
 name = "blackjack"
-version = "0.1.0"
-requires-python = ">=3.10,<3.13"
+version = "0.2.0"
+requires-python = ">=3.10,<3.14"
 description = "<<A BlackJack Dealer>>"
 authors = []
 urls = { Homepage = "https://lnbits.com", Repository = "https://github.com/lnbits/blackjack" }
-dependencies = [ "lnbits>1" ]
+dependencies = [ "lnbits>=1.7.0rc1" ]
 
 [tool.poetry]
 package-mode = false
 
+[tool.poetry.dependencies]
+# Poetry enforces LNURL's declared upper bound. Use uv for Python 3.13.
+python = ">=3.10,<3.13"
+
 [tool.uv]
+# coincurve 20's source build uses the pre-0.10 scikit-build-core configuration.
+build-constraint-dependencies = ["scikit-build-core<0.10"]
 dev-dependencies = [
     "black>=24.3.0",
     "pytest-asyncio>=0.21.0",
